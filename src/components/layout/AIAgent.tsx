@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+importimport { useEffect, useRef, useState } from 'react'
 import { ArrowRight, Check, ChevronDown, Command, Cpu, FileText, MoreHorizontal, PanelRightClose, Sparkles } from 'lucide-react'
 import { suggestedActions } from '../../data/mockStrategy'
 import type { AgentJob } from '../../types'

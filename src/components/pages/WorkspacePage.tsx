@@ -1,4 +1,4 @@
-import { ArrowUpRight, ArrowUpRightFromSquare, CalendarDays, Check, ChevronRight, Circle, Clock3, FileText, Filter, Lightbulb, MoreHorizontal, Plus, Sparkles } from 'lucide-react'
+importimportimportimportimportimportimportimportimportimportimportimportimportimportimportimportimportimportimportimportimportimportimportimportimportimportimportimportimportimportimportimport { ArrowUpRight, ArrowUpRightFromSquare, CalendarDays, Check, ChevronRight, Circle, Clock3, FileText, Filter, Lightbulb, MoreHorizontal, Plus, Sparkles } from 'lucide-react'
 import type { WorkspaceSection } from '../../types'
 
 const pageCopy: Record<Exclude<WorkspaceSection, 'Strategy'>, { eyebrow: string; title: string; description: string }> = {
@@ -17,15 +17,15 @@ const tasks = [
   { title: 'Подготовить содержание пилотного курса', meta: 'Продукт · Следующая неделя', state: 'open' },
 ]
 
-type Props = { section: Exclude<WorkspaceSection, 'Strategy'>; fileName?: string }
+type Props = { section: Exclude<WorkspaceSection, 'Strategy'>; fileName?: string; fileContent?: string }
 
-export function WorkspacePage({ section, fileName }: Props) {
+export function WorkspacePage({ section, fileName, fileContent }: Props) {
   const current = pageCopy[section]
   const title = fileName ?? current.title
   return <div className="secondary-page">
     <div className="page-crumb"><span>PROJECT</span><ChevronRight size={12} /><span>{current.eyebrow}</span></div>
     <div className="secondary-heading"><div><span className="eyebrow">{current.eyebrow} <i /> UPDATED JUST NOW</span><h1>{title}</h1><p>{fileName ? 'Документ проекта · Markdown' : current.description}</p></div><button className="outline-button"><Plus size={14} /> Создать</button></div>
-    {fileName ? <DocumentPreview fileName={fileName} /> : section === 'Overview' ? <Overview /> : section === 'Tasks' ? <TaskBoard /> : section === 'Planning' ? <Planning /> : section === 'Research' ? <Research /> : section === 'Documents' ? <Documents /> : section === 'Insights' ? <Insights /> : <Settings />}
+    {fileName ? <DocumentPreview fileName={fileName} content={fileContent} /> : section === 'Overview' ? <Overview /> : section === 'Tasks' ? <TaskBoard /> : section === 'Planning' ? <Planning /> : section === 'Research' ? <Research /> : section === 'Documents' ? <Documents /> : section === 'Insights' ? <Insights /> : <Settings />}
   </div>
 }
 
@@ -54,7 +54,7 @@ function Insights() { return <><div className="overview-stats"><Stat title="Ин
 
 function Settings() { return <div className="settings-layout"><nav className="settings-nav"><button className="selected">Project details</button><button>Team & access</button><button>AI context</button><button>Notifications</button></nav><section className="workspace-panel settings-form"><div className="panel-heading"><div><span className="eyebrow">GENERAL</span><h2>Детали проекта</h2></div><button className="outline-button">Сохранить</button></div><label>Название проекта<input defaultValue="Tech Education Platform" /></label><label>Описание<textarea defaultValue="Разработка образовательной платформы для изучения технологий" /></label><label>Цель проекта<input defaultValue="Проверить спрос на практическое tech-обучение" /></label><label>Часовой пояс<select defaultValue="Europe/Moscow"><option value="Europe/Moscow">Europe / Moscow (UTC+3)</option><option value="UTC">UTC</option></select></label></section></div> }
 
-function DocumentPreview({ fileName }: { fileName: string }) { return <article className="document-preview workspace-panel"><div className="document-preview-meta"><span><FileText size={14} /> {fileName}</span><span>Markdown <i /> Только в workspace</span></div><div className="document-preview-content"><span className="eyebrow">PROJECT DOCUMENT · LAST EDITED TODAY</span><h2>{fileName.replace('.md', '').replace(/-/g, ' ')}</h2><p>Рабочий документ проекта Tech Education Platform. Здесь собраны связанные наблюдения, решения и следующие шаги.</p><h3>Контекст</h3><p>Материалы этого документа пока хранятся локально в интерфейсе. Используйте его как пространство для структурирования проектных заметок.</p><h3>Следующие шаги</h3><ul><li>Уточнить гипотезы и связанные доказательства</li><li>Добавить владельца и дату следующего пересмотра</li><li>Связать документ с этапом стратегии</li></ul><div className="document-ai-note"><Sparkles size={15} /><span><strong>Контекст для AI-агента</strong><small>Этот документ доступен агенту в рамках текущего проекта.</small></span></div></div></article> }
+function DocumentPreview({ fileName, content }: { fileName: string; content?: string }) { return <article className="document-preview workspace-panel"><div className="document-preview-meta"><span><FileText size={14} /> {fileName}</span><span>Markdown <i /> Только в workspace</span></div><div className="document-preview-content"><span className="eyebrow">PROJECT DOCUMENT · LAST EDITED TODAY</span><h2>{fileName.replace('.md', '').replace(/-/g, ' ')}</h2>{content ? <pre className="generated-document-content">{content}</pre> : <><p>Рабочий документ проекта Tech Education Platform. Здесь собраны связанные наблюдения, решения и следующие шаги.</p><h3>Контекст</h3><p>Материалы этого документа пока хранятся локально в интерфейсе. Используйте его как пространство для структурирования проектных заметок.</p><h3>Следующие шаги</h3><ul><li>Уточнить гипотезы и связанные доказательства</li><li>Добавить владельца и дату следующего пересмотра</li><li>Связать документ с этапом стратегии</li></ul></>}<div className="document-ai-note"><Sparkles size={15} /><span><strong>Контекст для AI-агента</strong><small>Этот документ доступен агенту в рамках текущего проекта.</small></span></div></div></article> }
 
 function Stat({ title, value, note, trend }: { title: string; value: string; note: string; trend: string }) { return <article className="stat-card"><span>{title}</span><strong>{value}</strong><small>{note}</small><i>{trend}</i></article> }
 function TaskRow({ task }: { task: typeof tasks[number] }) { return <div className="overview-task"><span className={`task-checkbox ${task.state === 'progress' ? 'task-checkbox-active' : ''}`}>{task.state === 'progress' && <Circle size={6} fill="currentColor" />}</span><span><strong>{task.title}</strong><small>{task.meta}</small></span><span className="task-owner">AK</span></div> }
