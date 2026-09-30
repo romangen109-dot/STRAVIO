@@ -7,9 +7,10 @@ export const project = {
   updated: 'Обновлён 12 минут назад',
 }
 
-export const navigation: { label: WorkspaceSection; icon: string }[] = [
-  { label: 'Overview', icon: 'layout' },
-  { label: 'Strategy', icon: 'compass' },
+export const navigation: { label: WorkspaceSection; title?: string; icon: string }[] = [
+  { label: 'Overview', title: 'Dashboard', icon: 'layout' },
+  { label: 'Strategy', title: 'Strategy Algorithm', icon: 'compass' },
+  { label: 'Strategy Documents', icon: 'strategyDocuments' },
   { label: 'Research', icon: 'search' },
   { label: 'Documents', icon: 'files' },
   { label: 'Planning', icon: 'calendar' },
@@ -18,7 +19,7 @@ export const navigation: { label: WorkspaceSection; icon: string }[] = [
   { label: 'Settings', icon: 'settings' },
 ]
 
-export const initialFiles: ProjectFile[] = [
+export const initialFiles: Omit<ProjectFile, 'userId'>[] = [
   { id: 'current-state', name: 'current-state.md', folder: 'strategy' },
   { id: 'desired-state', name: 'desired-state.md', folder: 'strategy' },
   { id: 'options', name: 'options.md', folder: 'strategy' },

@@ -25,10 +25,11 @@ export const desiredStateQuestions: InterviewQuestion<keyof DesiredStateAnswers>
   { key: 'changes', title: 'Changes After Result', explanation: 'Что изменится после достижения результата?', placeholder: 'Опишите последствия для продукта, команды и клиентов...' },
 ]
 
-export function createInitialStrategy(): StrategyData {
+export function createInitialStrategy(userId = ''): StrategyData {
   const now = new Date().toISOString()
   return {
-    id: 'tech-education-platform-strategy',
+    userId,
+    id: globalThis.crypto?.randomUUID?.() ?? `strategy-${userId}-${Date.now()}`,
     name: project.name,
     description: project.description,
     currentState: { situation: '', resources: '', skills: '', constraints: '', problems: '', opportunities: '' },

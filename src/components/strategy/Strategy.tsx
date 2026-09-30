@@ -11,9 +11,9 @@ import { StrategyCompleted } from './StrategyCompleted'
 import { StrategicOptionsStep } from './StrategicOptionsStep'
 import { useStrategy } from './useStrategy'
 
-type Props = { onGenerateDocument: (strategy: StrategyData) => void }
+type Props = { onGenerateDocument: (strategy: StrategyData) => void; onAskAI: (prompt: string) => void }
 
-export function Strategy({ onGenerateDocument }: Props) {
+export function Strategy({ onGenerateDocument, onAskAI }: Props) {
   const { strategy, updateStrategy } = useStrategy()
   const setStep = (workflowStep: number) => updateStrategy((current) => ({ ...current, workflowStep }))
 
@@ -31,7 +31,7 @@ export function Strategy({ onGenerateDocument }: Props) {
       <div className="project-title-row">
         <div className="strategy-project-icon"><Layers3 size={19} /></div>
         <div className="project-title-copy"><h1>{strategy.name || project.name}</h1><p>{strategy.description || project.description}</p></div>
-        <div className="project-header-meta"><span className="status-pill"><i /> {strategy.completed ? 'Strategy completed' : project.status}</span><span className="updated-label"><Clock3 size={12} /> Updated {new Date(strategy.updatedAt).toLocaleDateString()}</span></div>
+        <div className="project-header-meta"><button className="outline-button" onClick={() => onAskAI('Help me answer the current Strategy Algorithm step.')}>Ask AI</button><span className="status-pill"><i /> {strategy.completed ? 'Strategy completed' : project.status}</span><span className="updated-label"><Clock3 size={12} /> Updated {new Date(strategy.updatedAt).toLocaleDateString()}</span></div>
       </div>
     </header>
     <AlgorithmProgress activeStep={strategy.workflowStep} completed={strategy.completed} onSelectStep={setStep} />

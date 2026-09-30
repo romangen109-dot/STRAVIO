@@ -1,6 +1,7 @@
 export type WorkspaceSection =
   | 'Overview'
   | 'Strategy'
+  | 'Strategy Documents'
   | 'Research'
   | 'Documents'
   | 'Planning'
@@ -8,8 +9,15 @@ export type WorkspaceSection =
   | 'Insights'
   | 'Settings'
 
+export type User = {
+  id: string
+  name: string
+  email: string
+}
+
 export type ProjectFile = {
   id: string
+  userId: string
   name: string
   folder: string
   content?: string
@@ -18,9 +26,10 @@ export type ProjectFile = {
 export type WorkspaceTab = {
   id: string
   label: string
-  kind: 'section' | 'file'
+  kind: 'section' | 'file' | 'strategy-document'
   section?: WorkspaceSection
   fileId?: string
+  strategyDocumentId?: string
 }
 
 export type StrategyStage = {
@@ -91,6 +100,7 @@ export type StrategyControl = {
 }
 
 export type StrategyData = {
+  userId: string
   id: string
   name: string
   description: string
@@ -107,10 +117,79 @@ export type StrategyData = {
   updatedAt: string
 }
 
+export type StrategyDocument = {
+  userId: string
+  id: string
+  title: string
+  content: string
+  createdAt: string
+  updatedAt: string
+  status: 'ready' | 'edited'
+  strategy: StrategyData
+}
+
+export type StrategyActivityType = 'strategy-created' | 'strategy-updated' | 'strategy-completed' | 'document-generated' | 'document-edited' | 'document-deleted'
+
+export type StrategyActivity = {
+  userId: string
+  id: string
+  type: StrategyActivityType
+  title: string
+  createdAt: string
+  strategyId?: string
+  documentId?: string
+}
+
+export type PlanningTaskStatus = 'todo' | 'in-progress' | 'completed'
+export type PlanningTaskPriority = 'low' | 'medium' | 'high'
+
+export type PlanningTask = {
+  userId: string
+  id: string
+  strategyId: string
+  stageId: string
+  title: string
+  description: string
+  status: PlanningTaskStatus
+  priority: PlanningTaskPriority
+  deadline: string
+  createdAt: string
+  sourceStagePlanId?: string
+}
+
+export type AgentTaskDraft = Omit<PlanningTask, 'id' | 'createdAt'>
+export type AgentProposalStatus = 'pending' | 'applied' | 'cancelled'
+
+export type AgentProposal =
+  | { id: string; kind: 'create-tasks'; status: AgentProposalStatus; tasks: AgentTaskDraft[] }
+  | { id: string; kind: 'update-desired-state'; status: AgentProposalStatus; userId: string; strategyId: string; previousValue: string; proposedValue: string }
+
+export type AgentMessage = {
+  userId: string
+  strategyId: string
+  id: string
+  role: 'user' | 'agent'
+  content: string
+  createdAt: string
+  proposal?: AgentProposal
+}
+
+export type AgentContext = {
+  userId: string
+  strategy: StrategyData
+  hasActiveStrategy: boolean
+  tasks: PlanningTask[]
+  documents: StrategyDocument[]
+  activeView: string
+  currentDocument?: StrategyDocument | { id: string; title: string; content: string }
+}
+
 export type AgentJob = {
   id: number
   title: string
   result: string
-  status: 'thinking' | 'analyzing' | 'completed'
+  status: 'thinking' | 'analyzing' | 'completed' | 'failed'
   source?: 'action' | 'chat'
+  strategyId?: string
+  proposal?: AgentProposal
 }

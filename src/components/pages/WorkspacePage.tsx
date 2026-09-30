@@ -1,7 +1,7 @@
-importimportimportimportimportimportimportimportimportimportimportimportimportimportimportimportimportimportimportimportimportimportimportimportimportimportimportimportimportimportimportimport { ArrowUpRight, ArrowUpRightFromSquare, CalendarDays, Check, ChevronRight, Circle, Clock3, FileText, Filter, Lightbulb, MoreHorizontal, Plus, Sparkles } from 'lucide-react'
+import { ArrowUpRight, ArrowUpRightFromSquare, CalendarDays, Check, ChevronRight, Circle, Clock3, FileText, Filter, Lightbulb, MoreHorizontal, Plus, Sparkles } from 'lucide-react'
 import type { WorkspaceSection } from '../../types'
 
-const pageCopy: Record<Exclude<WorkspaceSection, 'Strategy'>, { eyebrow: string; title: string; description: string }> = {
+const pageCopy: Record<Exclude<WorkspaceSection, 'Strategy' | 'Strategy Documents'>, { eyebrow: string; title: string; description: string }> = {
   Overview: { eyebrow: 'PROJECT HOME', title: 'Обзор проекта', description: 'Сводка активности, приоритетов и ключевых сигналов по проекту.' },
   Research: { eyebrow: 'KNOWLEDGE BASE', title: 'Исследования', description: 'Источники, рыночные сигналы и выводы, связанные с вашей стратегией.' },
   Documents: { eyebrow: 'PROJECT LIBRARY', title: 'Документы', description: 'Материалы проекта и рабочие документы команды.' },
@@ -17,7 +17,7 @@ const tasks = [
   { title: 'Подготовить содержание пилотного курса', meta: 'Продукт · Следующая неделя', state: 'open' },
 ]
 
-type Props = { section: Exclude<WorkspaceSection, 'Strategy'>; fileName?: string; fileContent?: string }
+type Props = { section: Exclude<WorkspaceSection, 'Strategy' | 'Strategy Documents'>; fileName?: string; fileContent?: string }
 
 export function WorkspacePage({ section, fileName, fileContent }: Props) {
   const current = pageCopy[section]
