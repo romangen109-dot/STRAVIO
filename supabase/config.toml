@@ -1,0 +1,4 @@
+project_id = "stravio"
+
+[functions.ai]
+verify_jwt = true

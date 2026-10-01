@@ -128,7 +128,7 @@ export type StrategyDocument = {
   strategy: StrategyData
 }
 
-export type StrategyActivityType = 'strategy-created' | 'strategy-updated' | 'strategy-completed' | 'document-generated' | 'document-edited' | 'document-deleted'
+export type StrategyActivityType = 'strategy-created' | 'strategy-updated' | 'strategy-completed' | 'document-generated' | 'document-edited' | 'document-deleted' | 'task-created' | 'task-completed' | 'ai-action-applied'
 
 export type StrategyActivity = {
   userId: string

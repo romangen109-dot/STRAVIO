@@ -41,8 +41,8 @@ function buildStages(strategy: StrategyData): PlanningStage[] {
 }
 
 export function Planning({ strategyOverride, onCreateStrategy, onAskAI }: Props) {
-  const { strategy: savedStrategy } = useStrategy()
-  const { tasks, createTask, updateTask, deleteTask, createFromStagePlans } = usePlanningTasks()
+  const { strategy: savedStrategy, loading: strategyLoading, error: strategyError } = useStrategy()
+  const { tasks, createTask, updateTask, deleteTask, createFromStagePlans, saving, loading: tasksLoading, error } = usePlanningTasks()
   const strategy = strategyOverride ?? savedStrategy
   const [editingTask, setEditingTask] = useState<PlanningTask | null>(null)
   const [newTaskStage, setNewTaskStage] = useState<string | null>(null)
@@ -60,12 +60,18 @@ export function Planning({ strategyOverride, onCreateStrategy, onAskAI }: Props)
   const pendingStagePlans = strategy.stages.filter((stage) => stage.title.trim() && !strategyTasks.some((task) => task.sourceStagePlanId === stage.id))
 
   const openCreate = (stageId = stages[0].id) => setNewTaskStage(stageId)
-  const saveTask = (draft: TaskDraft) => {
-    if (editingTask) updateTask(editingTask.id, draft)
-    else createTask({ ...draft, strategyId: strategy.id, sourceStagePlanId: undefined })
-    setEditingTask(null)
-    setNewTaskStage(null)
+  const saveTask = async (draft: TaskDraft) => {
+    const saved = editingTask
+      ? await updateTask(editingTask.id, draft)
+      : await createTask({ ...draft, strategyId: strategy.id, sourceStagePlanId: undefined })
+    if (saved) {
+      setEditingTask(null)
+      setNewTaskStage(null)
+    }
   }
+
+  if (strategyLoading || tasksLoading) return <div className="secondary-page planning-page"><section className="workspace-panel planning-empty" aria-live="polite">Loading strategy and Planning…</section></div>
+  if (strategyError || error) return <div className="secondary-page planning-page"><section className="workspace-panel planning-empty" role="alert"><h2>Planning data could not be loaded.</h2><p>{strategyError || error}</p><button className="outline-button" onClick={() => window.location.reload()}>Reload workspace</button></section></div>
 
   return <div className="secondary-page planning-page">
     <div className="page-crumb"><span>PROJECT</span><span>›</span><span>PLANNING</span></div>
@@ -73,6 +79,7 @@ export function Planning({ strategyOverride, onCreateStrategy, onAskAI }: Props)
       <div><span className="eyebrow">STRATEGY EXECUTION <i /> {strategyStarted ? 'ACTIVE PLAN' : 'WAITING FOR STRATEGY'}</span><h1>Planning</h1><p>{strategyStarted ? 'Translate strategic decisions into coordinated execution.' : 'Prepare a plan for the active strategy.'}</p></div>
       {strategyStarted && <div className="planning-heading-actions"><button className="outline-button" onClick={() => onAskAI('Analyze my tasks and identify the most important next actions.')}>Ask AI</button><button className="outline-button algorithm-primary" onClick={() => openCreate()}><Plus size={14} /> Add Task</button></div>}
     </div>
+    {error && <div className="auth-error" role="alert">Planning changes were not saved: {error}</div>}
 
     {!strategyStarted ? <section className="planning-empty workspace-panel"><span className="planning-empty-icon"><ListChecks size={18} /></span><span className="eyebrow">STRATEGY REQUIRED</span><h2>Create a strategy first.</h2><p>Planning stages and tasks are linked to the active Strategy Algorithm.</p><button className="outline-button algorithm-primary" onClick={onCreateStrategy}><Plus size={14} /> Create Strategy</button></section> : <>
       <section className="planning-strategy workspace-panel">
@@ -87,9 +94,9 @@ export function Planning({ strategyOverride, onCreateStrategy, onAskAI }: Props)
         </div>
       </section>
 
-      {pendingStagePlans.length > 0 && <button className="planning-suggestions" onClick={() => createFromStagePlans(strategy.id, strategy.stages)}><span><Sparkles size={14} /></span><span><strong>Tasks from Stage Plans</strong><small>{pendingStagePlans.length} untracked stage {pendingStagePlans.length === 1 ? 'plan' : 'plans'} · titles and details are taken from your strategy</small></span><span className="planning-suggestion-action">Add {pendingStagePlans.length} tasks <ArrowRight size={13} /></span></button>}
+      {pendingStagePlans.length > 0 && <button className="planning-suggestions" onClick={() => void createFromStagePlans(strategy.id, strategy.stages)} disabled={saving}><span><Sparkles size={14} /></span><span><strong>Tasks from Stage Plans</strong><small>{pendingStagePlans.length} untracked stage {pendingStagePlans.length === 1 ? 'plan' : 'plans'} · titles and details are taken from your strategy</small></span><span className="planning-suggestion-action">Add {pendingStagePlans.length} tasks <ArrowRight size={13} /></span></button>}
 
-      {strategyTasks.length === 0 && <section className="planning-empty-task workspace-panel"><div><h2>Your plan is ready to be executed.</h2><p>Add the first action to begin tracking execution across your strategy stages.</p></div><button className="outline-button algorithm-primary" onClick={() => openCreate()}><Plus size={14} /> Add your first task</button></section>}
+      {strategyTasks.length === 0 && <section className="planning-empty-task workspace-panel"><div><h2>Your plan is ready to be executed.</h2><p>Add the first action to begin tracking execution across your strategy stages.</p></div><button className="outline-button algorithm-primary" onClick={() => openCreate()} disabled={saving}><Plus size={14} /> Add your first task</button></section>}
 
       <div className="planning-stage-list">{stages.map((stage, index) => {
         const stageTasks = strategyTasks.filter((task) => task.stageId === stage.id)
@@ -106,7 +113,7 @@ export function Planning({ strategyOverride, onCreateStrategy, onAskAI }: Props)
 
           {stage.id === 'stage-plans' && strategy.stages.length > 0 && <div className="planning-stage-plan-list">{strategy.stages.map((plan, planIndex) => <div className="planning-substage" key={plan.id}><span>{String(planIndex + 1).padStart(2, '0')}</span><strong>{plan.title.trim() || `Stage Plan ${planIndex + 1}`}</strong><small>{plan.objective.trim() || plan.expectedResult.trim()}</small></div>)}</div>}
 
-          <div className="planning-task-list">{stageTasks.length ? stageTasks.map((task) => <TaskRow key={task.id} task={task} onStatusChange={(status) => updateTask(task.id, { status })} onEdit={() => setEditingTask(task)} onDelete={() => deleteTask(task.id)} />) : <div className="planning-stage-empty"><span>No actions assigned to this stage.</span><button onClick={() => openCreate(stage.id)}>Add task <Plus size={12} /></button></div>}</div>
+          <div className="planning-task-list">{stageTasks.length ? stageTasks.map((task) => <TaskRow key={task.id} task={task} onStatusChange={(status) => { void updateTask(task.id, { status }) }} onEdit={() => setEditingTask(task)} onDelete={() => { void deleteTask(task.id) }} />) : <div className="planning-stage-empty"><span>No actions assigned to this stage.</span><button onClick={() => openCreate(stage.id)}>Add task <Plus size={12} /></button></div>}</div>
         </section>
       })}</div>
     </>}
@@ -117,6 +124,7 @@ export function Planning({ strategyOverride, onCreateStrategy, onAskAI }: Props)
       initialStageId={newTaskStage ?? stages[0].id}
       onClose={() => { setEditingTask(null); setNewTaskStage(null) }}
       onSave={saveTask}
+      saving={saving}
     />}
   </div>
 }
@@ -134,7 +142,7 @@ function TaskRow({ task, onStatusChange, onEdit, onDelete }: { task: PlanningTas
   </article>
 }
 
-function TaskModal({ stages, task, initialStageId, onClose, onSave }: { stages: PlanningStage[]; task: PlanningTask | null; initialStageId: string; onClose: () => void; onSave: (draft: TaskDraft) => void }) {
+function TaskModal({ stages, task, initialStageId, onClose, onSave, saving }: { stages: PlanningStage[]; task: PlanningTask | null; initialStageId: string; onClose: () => void; onSave: (draft: TaskDraft) => Promise<void>; saving: boolean }) {
   const [draft, setDraft] = useState<TaskDraft>(() => ({
     title: task?.title ?? '',
     description: task?.description ?? '',
@@ -147,12 +155,12 @@ function TaskModal({ stages, task, initialStageId, onClose, onSave }: { stages: 
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (!draft.title.trim()) return
-    onSave({ ...draft, title: draft.title.trim(), description: draft.description.trim() })
+    void onSave({ ...draft, title: draft.title.trim(), description: draft.description.trim() })
   }
 
   return <div className="planning-modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
     <section className="planning-modal workspace-panel" role="dialog" aria-modal="true" aria-labelledby="planning-modal-title">
-      <header><div><span className="eyebrow">STRATEGY EXECUTION</span><h2 id="planning-modal-title">{task ? 'Edit Task' : 'Add Task'}</h2></div><button className="icon-button" onClick={onClose} aria-label="Close"><X size={16} /></button></header>
+      <header><div><span className="eyebrow">STRATEGY EXECUTION</span><h2 id="planning-modal-title">{task ? 'Edit Task' : 'Add Task'}</h2></div><button className="icon-button" onClick={onClose} aria-label="Close" disabled={saving}><X size={16} /></button></header>
       <form onSubmit={submit}>
         <label className="planning-field">Task title<input autoFocus required value={draft.title} onChange={(event) => update('title', event.target.value)} placeholder="Name the action" /></label>
         <label className="planning-field">Description<textarea rows={3} value={draft.description} onChange={(event) => update('description', event.target.value)} placeholder="Context or expected outcome" /></label>
@@ -162,7 +170,7 @@ function TaskModal({ stages, task, initialStageId, onClose, onSave }: { stages: 
           {task && <label className="planning-field">Status<select value={draft.status} onChange={(event) => update('status', event.target.value as PlanningTaskStatus)}>{Object.entries(statusLabels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label>}
           <label className="planning-field">Deadline<input type="date" value={draft.deadline} onChange={(event) => update('deadline', event.target.value)} /></label>
         </div>
-        <footer><button type="button" className="outline-button" onClick={onClose}>Cancel</button><button type="submit" className="outline-button algorithm-primary"><Check size={13} /> {task ? 'Save Task' : 'Add Task'}</button></footer>
+        <footer><button type="button" className="outline-button" onClick={onClose} disabled={saving}>Cancel</button><button type="submit" className="outline-button algorithm-primary" disabled={saving}><Check size={13} /> {saving ? 'Saving…' : task ? 'Save Task' : 'Add Task'}</button></footer>
       </form>
     </section>
   </div>

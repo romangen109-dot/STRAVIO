@@ -5,24 +5,39 @@ import type { AgentProposal, AgentProposalStatus } from '../../types'
 type Props = {
   content: string
   proposal?: AgentProposal
-  onApplyProposal: (proposal: AgentProposal) => boolean
-  onSetProposalStatus: (status: AgentProposalStatus) => void
+  onApplyProposal: (proposal: AgentProposal) => Promise<boolean>
+  onSetProposalStatus: (status: AgentProposalStatus) => Promise<void>
 }
 
 export function AgentMessage({ content, proposal, onApplyProposal, onSetProposalStatus }: Props) {
   const [proposalError, setProposalError] = useState('')
+  const [busy, setBusy] = useState(false)
   const applyingProposalIds = useRef(new Set<string>())
 
-  const apply = () => {
+  const apply = async () => {
     if (!proposal || applyingProposalIds.current.has(proposal.id)) return
     applyingProposalIds.current.add(proposal.id)
-    if (!onApplyProposal(proposal)) {
+    setBusy(true)
+    if (!await onApplyProposal(proposal)) {
       applyingProposalIds.current.delete(proposal.id)
-      setProposalError('The strategy context changed. Review the current strategy and try again.')
+      setProposalError('The change was not applied. Check the cloud connection and current strategy, then try again.')
+      setBusy(false)
       return
     }
-    onSetProposalStatus('applied')
     setProposalError('')
+    setBusy(false)
+  }
+
+  const cancel = async () => {
+    setBusy(true)
+    try {
+      await onSetProposalStatus('cancelled')
+      setProposalError('')
+    } catch (error) {
+      setProposalError(error instanceof Error ? error.message : 'Could not cancel the proposal.')
+    } finally {
+      setBusy(false)
+    }
   }
 
   return <div className="agent-response-content">
@@ -30,7 +45,7 @@ export function AgentMessage({ content, proposal, onApplyProposal, onSetProposal
     {proposal && <section className={`agent-proposal-card ${proposal.status}`}>
       <div className="agent-proposal-heading"><span><Circle size={7} fill="currentColor" /></span><strong>{proposal.kind === 'create-tasks' ? 'Proposed Planning tasks' : 'Proposed strategy change'}</strong><small>{proposal.status === 'pending' ? 'AWAITING CONFIRMATION' : proposal.status === 'applied' ? 'APPLIED' : 'CANCELLED'}</small></div>
       {proposal.kind === 'create-tasks' ? <div className="agent-proposal-items">{proposal.tasks.map((task, index) => <div key={`${task.title}-${index}`}><span>{String(index + 1).padStart(2, '0')}</span><div><strong>{task.title}</strong>{task.description && <small>{task.description}</small>}</div></div>)}</div> : <div className="agent-proposal-change"><div><small>CURRENT DESIRED STATE</small><p>{proposal.previousValue || 'Not provided'}</p></div><ChevronDown size={14} /><div><small>PROPOSED DESIRED STATE</small><p>{proposal.proposedValue}</p></div></div>}
-      {proposal.status === 'pending' ? <div className="agent-proposal-actions"><button className="outline-button" onClick={() => onSetProposalStatus('cancelled')}>Cancel</button><button className="outline-button algorithm-primary" onClick={apply}>{proposal.kind === 'create-tasks' ? <><Plus size={12} /> Create Tasks</> : <><Check size={12} /> Apply Change</>}</button></div> : <div className="agent-proposal-result"><Check size={12} /> {proposal.status === 'applied' ? 'Confirmed and saved' : 'No changes made'}</div>}
+      {proposal.status === 'pending' ? <div className="agent-proposal-actions"><button className="outline-button" onClick={() => void cancel()} disabled={busy}>Cancel</button><button className="outline-button algorithm-primary" onClick={() => void apply()} disabled={busy}>{proposal.kind === 'create-tasks' ? <><Plus size={12} /> {busy ? 'Creating…' : 'Create Tasks'}</> : <><Check size={12} /> {busy ? 'Applying…' : 'Apply Change'}</>}</button></div> : <div className="agent-proposal-result"><Check size={12} /> {proposal.status === 'applied' ? 'Confirmed and saved' : 'No changes made'}</div>}
       {proposalError && <p className="agent-proposal-error">{proposalError}</p>}
     </section>}
   </div>

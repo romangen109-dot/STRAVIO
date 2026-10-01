@@ -7,7 +7,7 @@ type Props = {
   documents: StrategyDocument[]
   selectedDocumentId?: string
   onOpen: (document: StrategyDocument) => void
-  onSave: (id: string, content: string) => void
+  onSave: (id: string, content: string) => Promise<boolean>
   onDelete: (id: string) => void
   onDuplicate: (document: StrategyDocument) => void
   onBack: () => void
@@ -24,6 +24,8 @@ export function StrategyDocuments({ documents, selectedDocumentId, onOpen, onSav
   const executionCounts = countExecutionTasks(documentTasks)
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState('')
 
   useEffect(() => {
     setEditing(false)
@@ -48,18 +50,23 @@ export function StrategyDocuments({ documents, selectedDocumentId, onOpen, onSav
     setEditing(true)
   }
 
-  const save = () => {
-    onSave(selected.id, draft)
-    setEditing(false)
+  const save = async () => {
+    setSaving(true)
+    setSaveError('')
+    const saved = await onSave(selected.id, draft)
+    setSaving(false)
+    if (saved) setEditing(false)
+    else setSaveError('Document was not saved. Your draft is still available here.')
   }
 
   return <div className="secondary-page strategy-document-editor-page">
     <div className="page-crumb"><span>PROJECT</span><span>›</span><button onClick={onBack}>STRATEGY DOCUMENTS</button><span>›</span><span>DOCUMENT</span></div>
-    <div className="strategy-document-toolbar"><div className="document-toolbar-title"><span className="strategy-document-icon"><FileText size={16} /></span><div><strong>{selected.title}</strong><small>{editing ? 'Unsaved changes' : `Last saved ${dateFormatter.format(new Date(selected.updatedAt))}`}</small></div></div><div className="document-toolbar-actions">
+    {saveError && <div className="auth-error" role="alert">{saveError}</div>}
+    <div className="strategy-document-toolbar"><div className="document-toolbar-title"><span className="strategy-document-icon"><FileText size={16} /></span><div><strong>{selected.title}</strong><small>{saving ? 'Saving to cloud…' : editing ? 'Unsaved changes' : `Last saved ${dateFormatter.format(new Date(selected.updatedAt))}`}</small></div></div><div className="document-toolbar-actions">
       <button className="outline-button" onClick={() => onOpenPlanning(selected.strategy)}>Open Planning</button>
       <button className="outline-button" onClick={() => onAskAI('Analyze this strategy document for gaps and risks.', { id: selected.id, title: selected.title, content: editing ? draft : selected.content })}>Analyze this strategy</button>
       <button className="outline-button" onClick={() => onDuplicate(selected)}><Copy size={13} /> Duplicate</button>
-      {editing ? <><button className="outline-button" onClick={() => setEditing(false)}>Cancel</button><button className="outline-button algorithm-primary" onClick={save}><Save size={13} /> Save</button></> : <button className="outline-button" onClick={startEditing}><Pencil size={13} /> Edit</button>}
+      {editing ? <><button className="outline-button" onClick={() => setEditing(false)} disabled={saving}>Cancel</button><button className="outline-button algorithm-primary" onClick={() => void save()} disabled={saving}><Save size={13} /> {saving ? 'Saving…' : 'Save'}</button></> : <button className="outline-button" onClick={startEditing}><Pencil size={13} /> Edit</button>}
       <button className="icon-button strategy-document-action delete" onClick={() => onDelete(selected.id)} aria-label="Delete strategy document" title="Delete"><Trash2 size={14} /></button>
     </div></div>
     <div className="strategy-document-meta"><span className={`strategy-document-status ${selected.status}`}>{selected.status === 'edited' ? 'EDITED' : 'READY'}</span><span>Created {dateFormatter.format(new Date(selected.createdAt))}</span><span>Strategy Algorithm snapshot</span></div>

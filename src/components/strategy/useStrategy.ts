@@ -1,8 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { StrategyData } from '../../types'
 import { createInitialStrategy } from '../../data/strategyAlgorithm'
-import { recordStrategyActivity } from '../../data/strategyActivity'
-import { localStorageDataProvider } from '../../data/storage'
+import { getCachedActiveStrategy, getStrategies, updateStrategy as persistStrategy } from '../../data/strategyService'
 import { useCurrentUser } from '../auth/UserContext'
 
 export const STRATEGY_DATA_EVENT = 'stravio:strategy-data'
@@ -50,14 +49,13 @@ function isStrategyData(value: unknown): value is StrategyData {
 }
 
 export function loadStrategyData(userId: string): StrategyData {
-  const stored = localStorageDataProvider.get<unknown>(userId, 'strategy')
-  return isStrategyData(stored) && stored.userId === userId ? stored : createInitialStrategy(userId)
+  return getCachedActiveStrategy(userId)
 }
 
-export function saveStrategyData(strategy: StrategyData) {
-  if (typeof window === 'undefined') return
-  localStorageDataProvider.set(strategy.userId, 'strategy', strategy)
-  window.dispatchEvent(new Event(STRATEGY_DATA_EVENT))
+export async function saveStrategyData(strategy: StrategyData) {
+  const saved = await persistStrategy(strategy)
+  window.dispatchEvent(new CustomEvent<StrategyData>(STRATEGY_DATA_EVENT, { detail: saved }))
+  return saved
 }
 
 export function hasStrategyProgress(strategy: StrategyData) {
@@ -75,28 +73,56 @@ export function hasStrategyProgress(strategy: StrategyData) {
 export function useStrategy() {
   const user = useCurrentUser()
   const [strategy, setStrategy] = useState<StrategyData>(() => loadStrategyData(user.id))
-  const previousStrategy = useRef(strategy)
+  const [loading, setLoading] = useState(true)
+  const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const [error, setError] = useState('')
+  const lastSaved = useRef('')
 
   useEffect(() => {
-    const hasStoredStrategy = localStorageDataProvider.get<StrategyData>(user.id, 'strategy') !== undefined
-    if (hasStoredStrategy || hasStrategyProgress(strategy)) saveStrategyData(strategy)
-    const previous = previousStrategy.current
-    if (previous !== strategy) {
-      const wasStarted = hasStrategyProgress(previous)
-      const isStarted = hasStrategyProgress(strategy)
-      const previousData = { ...previous, workflowStep: 0, updatedAt: '' }
-      const currentData = { ...strategy, workflowStep: 0, updatedAt: '' }
-      if (!wasStarted && isStarted) recordStrategyActivity('strategy-created', 'Strategy created', strategy.id, undefined, user.id)
-      else if (!previous.completed && strategy.completed) recordStrategyActivity('strategy-completed', 'Strategy completed', strategy.id, undefined, user.id)
-      else if (isStarted && JSON.stringify(previousData) !== JSON.stringify(currentData)) recordStrategyActivity('strategy-updated', 'Strategy updated', strategy.id, undefined, user.id)
-    }
-    previousStrategy.current = strategy
-  }, [strategy, user.id])
+    let active = true
+    setLoading(true)
+    getStrategies(user.id).then((strategies) => {
+      if (!active) return
+      const loaded = strategies[0] ?? createInitialStrategy(user.id)
+      lastSaved.current = JSON.stringify(loaded)
+      setStrategy(loaded)
+      setError('')
+    }).catch((loadError: unknown) => {
+      if (active) setError(loadError instanceof Error ? loadError.message : 'Could not load the saved strategy.')
+    }).finally(() => {
+      if (active) setLoading(false)
+    })
+    return () => { active = false }
+  }, [user.id])
 
   useEffect(() => {
-    const syncStrategy = () => {
-      const stored = loadStrategyData(user.id)
+    if (loading || !hasStrategyProgress(strategy)) return
+    const serialized = JSON.stringify(strategy)
+    if (serialized === lastSaved.current) return
+    let active = true
+    setSaveState('idle')
+    const timer = window.setTimeout(() => {
+      setSaveState('saving')
+      void saveStrategyData(strategy).then((saved) => {
+        if (!active) return
+        lastSaved.current = JSON.stringify(saved)
+        setSaveState('saved')
+        setError('')
+      }).catch((saveError: unknown) => {
+        if (!active) return
+        setSaveState('error')
+        setError(saveError instanceof Error ? saveError.message : 'Could not save the strategy.')
+      })
+    }, 500)
+    return () => { active = false; window.clearTimeout(timer) }
+  }, [loading, strategy])
+
+  useEffect(() => {
+    const syncStrategy = (event: Event) => {
+      const stored = event instanceof CustomEvent && isStrategyData(event.detail) ? event.detail : loadStrategyData(user.id)
       setStrategy((current) => JSON.stringify(current) === JSON.stringify(stored) ? current : stored)
+      lastSaved.current = JSON.stringify(stored)
+      setSaveState('saved')
     }
     window.addEventListener(STRATEGY_DATA_EVENT, syncStrategy)
     return () => window.removeEventListener(STRATEGY_DATA_EVENT, syncStrategy)
@@ -114,5 +140,5 @@ export function useStrategy() {
     })
   }
 
-  return { strategy, updateStrategy }
+  return { strategy, updateStrategy, loading, saveState, error }
 }

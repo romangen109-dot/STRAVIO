@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { AIAgent } from './AIAgent'
 import { Sidebar } from './Sidebar'
 import { Topbar } from './Topbar'
@@ -27,16 +27,23 @@ type Props = {
   onToggleAgent: () => void
   onCloseAgent: () => void
   onAgentPromptHandled: (id: string) => void
-  onApplyAgentProposal: (proposal: AgentProposal) => boolean
+  onApplyAgentProposal: (messageId: string, proposal: AgentProposal) => Promise<boolean>
   onToggleSidebar: () => void
 }
 
 export function AppLayout({ children, activeSection, tabs, activeTabId, files, activeFile, query, agentOpen, agentContext, agentPrompt, sidebarOpen, onQueryChange, onNavigate, onOpenFile, onCreateFile, onSelectTab, onCloseTab, onAddTab, onToggleAgent, onCloseAgent, onAgentPromptHandled, onApplyAgentProposal, onToggleSidebar }: Props) {
+  const [backendError, setBackendError] = useState('')
+  useEffect(() => {
+    const showError = (event: Event) => setBackendError(event instanceof CustomEvent && typeof event.detail === 'string' ? event.detail : '')
+    window.addEventListener('stravio:backend-error', showError)
+    return () => window.removeEventListener('stravio:backend-error', showError)
+  }, [])
+
   return <div className={`app-shell ${agentOpen ? '' : 'agent-hidden'} ${sidebarOpen ? '' : 'sidebar-hidden'}`}>
     <Topbar query={query} onQueryChange={onQueryChange} onToggleAgent={onToggleAgent} agentOpen={agentOpen} />
     {sidebarOpen && <Sidebar activeSection={activeSection} onNavigate={onNavigate} files={files} activeFile={activeFile} onOpenFile={onOpenFile} onCreateFile={onCreateFile} onCollapse={onToggleSidebar} />}
     {!sidebarOpen && <button className="sidebar-reopen icon-button" aria-label="Открыть навигацию" title="Показать workspace" onClick={onToggleSidebar}><span>W</span></button>}
-    <main className="main-workspace" id="workspace"><ProjectTabs tabs={tabs} activeId={activeTabId} onSelect={onSelectTab} onClose={onCloseTab} onAdd={onAddTab} /><div className="main-scroll-area">{children}</div></main>
+    <main className="main-workspace" id="workspace">{backendError && <div className="auth-error" role="alert">Cloud operation failed: {backendError}<button className="icon-button" onClick={() => setBackendError('')} aria-label="Dismiss error">×</button></div>}<ProjectTabs tabs={tabs} activeId={activeTabId} onSelect={onSelectTab} onClose={onCloseTab} onAdd={onAddTab} /><div className="main-scroll-area">{children}</div></main>
     {agentOpen && <AIAgent onClose={onCloseAgent} getContext={agentContext} initialPrompt={agentPrompt} onPromptHandled={onAgentPromptHandled} onApplyProposal={onApplyAgentProposal} />}
   </div>
 }

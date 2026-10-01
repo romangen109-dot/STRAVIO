@@ -14,7 +14,7 @@ import { useStrategy } from './useStrategy'
 type Props = { onGenerateDocument: (strategy: StrategyData) => void; onAskAI: (prompt: string) => void }
 
 export function Strategy({ onGenerateDocument, onAskAI }: Props) {
-  const { strategy, updateStrategy } = useStrategy()
+  const { strategy, updateStrategy, saveState, error } = useStrategy()
   const setStep = (workflowStep: number) => updateStrategy((current) => ({ ...current, workflowStep }))
 
   const setCurrentAnswer = (key: keyof CurrentStateAnswers, answer: string) => updateStrategy((current) => ({ ...current, currentState: { ...current.currentState, [key]: answer } }))
@@ -31,9 +31,10 @@ export function Strategy({ onGenerateDocument, onAskAI }: Props) {
       <div className="project-title-row">
         <div className="strategy-project-icon"><Layers3 size={19} /></div>
         <div className="project-title-copy"><h1>{strategy.name || project.name}</h1><p>{strategy.description || project.description}</p></div>
-        <div className="project-header-meta"><button className="outline-button" onClick={() => onAskAI('Help me answer the current Strategy Algorithm step.')}>Ask AI</button><span className="status-pill"><i /> {strategy.completed ? 'Strategy completed' : project.status}</span><span className="updated-label"><Clock3 size={12} /> Updated {new Date(strategy.updatedAt).toLocaleDateString()}</span></div>
+        <div className="project-header-meta"><button className="outline-button" onClick={() => onAskAI('Help me answer the current Strategy Algorithm step.')}>Ask AI</button><span className="status-pill"><i /> {strategy.completed ? 'Strategy completed' : project.status}</span><span className="updated-label"><Clock3 size={12} /> {saveState === 'saving' ? 'Saving to cloud…' : saveState === 'saved' ? 'Saved to cloud' : saveState === 'error' ? 'Not saved' : 'Cloud save pending'}</span></div>
       </div>
     </header>
+    {error && <div className="auth-error" role="alert">Could not save strategy: {error}</div>}
     <AlgorithmProgress activeStep={strategy.workflowStep} completed={strategy.completed} onSelectStep={setStep} />
     <div className="strategy-content algorithm-content">
       {strategy.completed ? <StrategyCompleted strategy={strategy} onGenerateDocument={() => onGenerateDocument(strategy)} /> : strategy.workflowStep === 0 ? <InterviewStep
