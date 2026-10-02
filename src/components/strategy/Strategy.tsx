@@ -11,10 +11,10 @@ import { StrategyCompleted } from './StrategyCompleted'
 import { StrategicOptionsStep } from './StrategicOptionsStep'
 import { useStrategy } from './useStrategy'
 
-type Props = { onGenerateDocument: (strategy: StrategyData) => void; onAskAI: (prompt: string) => void }
+type Props = { onGenerateDocument: (strategy: StrategyData) => Promise<boolean>; onAskAI: (prompt: string) => void }
 
 export function Strategy({ onGenerateDocument, onAskAI }: Props) {
-  const { strategy, updateStrategy, saveState, error } = useStrategy()
+  const { strategy, updateStrategy, loading, loadError, saveState, error } = useStrategy()
   const setStep = (workflowStep: number) => updateStrategy((current) => ({ ...current, workflowStep }))
 
   const setCurrentAnswer = (key: keyof CurrentStateAnswers, answer: string) => updateStrategy((current) => ({ ...current, currentState: { ...current.currentState, [key]: answer } }))
@@ -24,6 +24,9 @@ export function Strategy({ onGenerateDocument, onAskAI }: Props) {
   const addStage = () => updateStrategy((current) => ({ ...current, stages: [...current.stages, { id: `stage-${Date.now()}-${Math.random().toString(16).slice(2)}`, title: '', objective: '', actions: '', expectedResult: '', dependencies: '' }] }))
   const deleteStage = (id: string) => updateStrategy((current) => ({ ...current, stages: current.stages.filter((stage) => stage.id !== id) }))
   const finishControl = () => updateStrategy((current) => ({ ...current, completed: true, workflowStep: 5 }))
+
+  if (loading) return <div className="strategy-page"><section className="workspace-panel algorithm-completed" aria-live="polite">Loading strategy from the cloud…</section></div>
+  if (loadError) return <div className="strategy-page"><section className="workspace-panel algorithm-completed" role="alert"><h2>Strategy could not be loaded.</h2><p>{loadError}</p><button className="outline-button" onClick={() => window.location.reload()}>Reload workspace</button></section></div>
 
   return <div className="strategy-page">
     <header className="project-page-header">

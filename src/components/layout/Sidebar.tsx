@@ -1,10 +1,10 @@
 import { useState } from 'react'
-import { Activity, BookOpen, CalendarDays, CheckSquare2, ChevronDown, Compass, FileStack, FileText, FolderTree, LayoutDashboard, PanelLeftClose, Search, Settings2, Sparkles, TrendingUp } from 'lucide-react'
+import { Activity, BookOpen, CalendarDays, ChevronDown, Compass, FileText, FolderTree, LayoutDashboard, PanelLeftClose, Settings2 } from 'lucide-react'
 import { navigation, project as mockProject } from '../../data/mockProject'
 import type { ProjectFile, WorkspaceSection } from '../../types'
 import { ProjectTree } from '../project/ProjectTree'
 
-const icons = { layout: LayoutDashboard, compass: Compass, strategyDocuments: FileText, search: Search, files: FileStack, calendar: CalendarDays, check: CheckSquare2, chart: TrendingUp, settings: Settings2 }
+const icons = { layout: LayoutDashboard, compass: Compass, strategyDocuments: FileText, calendar: CalendarDays, settings: Settings2 }
 
 type Props = {
   activeSection: WorkspaceSection
@@ -36,7 +36,7 @@ export function Sidebar({ activeSection, onNavigate, files, activeFile, onOpenFi
           {navigation.map((item) => {
             const Icon = icons[item.icon as keyof typeof icons]
             return <button className={`nav-item ${activeSection === item.label ? 'is-active' : ''}`} key={item.label} onClick={() => onNavigate(item.label)}>
-              <Icon size={16} strokeWidth={1.8} /><span>{item.title ?? item.label}</span>{item.label === 'Tasks' && <span className="nav-count">4</span>}
+              <Icon size={16} strokeWidth={1.8} /><span>{item.title ?? item.label}</span>
             </button>
           })}
         </nav>
@@ -44,10 +44,8 @@ export function Sidebar({ activeSection, onNavigate, files, activeFile, onOpenFi
       <div className="files-heading"><span>PROJECT FILES</span><FolderTree size={14} /></div>
       <ProjectTree files={files} activeFile={activeFile} onOpenFile={onOpenFile} onCreateFile={onCreateFile} />
       <div className="sidebar-bottom">
-        <div className="workspace-health"><span className="health-icon"><Sparkles size={14} /></span><span><strong>Project health</strong><small><i /> All systems on track</small></span><TrendingUp size={15} className="health-trend" /></div>
-        <div className="storage-row"><BookOpen size={13} /><span>Workspace storage</span><strong>24%</strong></div>
-        <div className="storage-track"><span /></div>
-        <span className="storage-caption">1.2 GB of 5 GB used</span>
+        <div className="storage-row"><BookOpen size={13} /><span>Project files</span><strong>{files.length}</strong></div>
+        <span className="storage-caption">Stored in this browser</span>
       </div>
     </aside>
   )

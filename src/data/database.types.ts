@@ -24,6 +24,7 @@ export interface Database {
     Views: Record<string, never>
     Functions: {
       import_local_workspace: { Args: { payload: Json }; Returns: Json }
+      consume_ai_request: { Args: { p_max_requests?: number }; Returns: boolean }
       resolve_ai_proposal: { Args: { p_message_id: string; p_strategy_id: string; p_action: string }; Returns: Json }
     }
     Enums: Record<string, never>

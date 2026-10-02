@@ -75,6 +75,13 @@ create table public.activity (
   foreign key (strategy_id, user_id) references public.strategies (id, user_id) on delete cascade
 );
 
+create table public.ai_rate_limits (
+  user_id uuid not null references auth.users (id) on delete cascade,
+  window_start timestamptz not null,
+  request_count integer not null check (request_count > 0),
+  primary key (user_id, window_start)
+);
+
 create index strategies_user_updated_idx on public.strategies (user_id, updated_at desc);
 create index documents_strategy_idx on public.documents (user_id, strategy_id, created_at desc);
 create index tasks_strategy_status_idx on public.tasks (user_id, strategy_id, status, deadline);
@@ -88,6 +95,7 @@ alter table public.documents enable row level security;
 alter table public.tasks enable row level security;
 alter table public.ai_messages enable row level security;
 alter table public.activity enable row level security;
+alter table public.ai_rate_limits enable row level security;
 
 create policy "users manage own profile" on public.profiles for all to authenticated
   using (id = (select auth.uid())) with check (id = (select auth.uid()));
@@ -106,6 +114,7 @@ create policy "users insert own activity" on public.activity for insert to authe
 
 grant select, insert, update, delete on public.profiles, public.strategies, public.documents, public.tasks, public.ai_messages to authenticated;
 grant select, insert on public.activity to authenticated;
+revoke all on public.ai_rate_limits from anon, authenticated;
 
 create or replace function public.log_workspace_change()
 returns trigger
@@ -290,6 +299,31 @@ begin
 end;
 $$;
 
+create or replace function public.consume_ai_request(p_max_requests integer default 12)
+returns boolean
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  owner_id uuid := auth.uid();
+  current_window timestamptz := date_trunc('minute', clock_timestamp());
+  current_count integer;
+begin
+  if owner_id is null then raise exception 'Authentication required' using errcode = '28000'; end if;
+  if p_max_requests < 1 or p_max_requests > 100 then raise exception 'Invalid rate limit' using errcode = '22023'; end if;
+
+  insert into public.ai_rate_limits (user_id, window_start, request_count)
+  values (owner_id, current_window, 1)
+  on conflict (user_id, window_start) do update
+    set request_count = public.ai_rate_limits.request_count + 1
+  returning request_count into current_count;
+
+  delete from public.ai_rate_limits where user_id = owner_id and window_start < current_window - interval '1 minute';
+  return current_count <= p_max_requests;
+end;
+$$;
+
 create or replace function public.resolve_ai_proposal(p_message_id text, p_strategy_id text, p_action text)
 returns jsonb
 language plpgsql
@@ -305,7 +339,7 @@ declare
   destination text;
 begin
   if owner_id is null then raise exception 'Authentication required' using errcode = '28000'; end if;
-  if p_action not in ('apply', 'cancel') then raise exception 'Invalid proposal action' using errcode = '22023'; end if;
+  if p_action is null or p_action not in ('apply', 'cancel') then raise exception 'Invalid proposal action' using errcode = '22023'; end if;
 
   select * into selected_message from public.ai_messages
   where id = p_message_id and strategy_id = p_strategy_id and role = 'agent'
@@ -363,6 +397,8 @@ $$;
 
 revoke all on function public.import_local_workspace(jsonb) from public;
 grant execute on function public.import_local_workspace(jsonb) to authenticated;
+revoke all on function public.consume_ai_request(integer) from public;
+grant execute on function public.consume_ai_request(integer) to authenticated;
 revoke all on function public.resolve_ai_proposal(text, text, text) from public;
 grant execute on function public.resolve_ai_proposal(text, text, text) to authenticated;
 revoke all on function public.log_workspace_change() from public;

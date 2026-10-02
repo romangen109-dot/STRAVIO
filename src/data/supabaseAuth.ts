@@ -1,6 +1,7 @@
-import type { AuthChangeEvent, User as SupabaseUser } from '@supabase/supabase-js'
+import type { AuthChangeEvent, AuthError, User as SupabaseUser } from '@supabase/supabase-js'
 import type { User } from '../types'
 import { isSupabaseConfigured, requireSupabase } from './supabaseClient'
+import { logClientError } from './errorHandling'
 
 export type AuthResult = { user: User } | { error: string } | { redirecting: true }
 
@@ -22,8 +23,14 @@ function toAppUser(user: SupabaseUser): User {
   }
 }
 
-function errorMessage(error: unknown, fallback: string) {
-  return error instanceof Error ? error.message : fallback
+function authErrorMessage(error: AuthError) {
+  if (error.code === 'invalid_credentials') return 'Email or password is incorrect.'
+  if (error.code === 'email_not_confirmed') return 'Confirm your email, then sign in.'
+  if (error.code === 'weak_password') return 'Choose a stronger password and try again.'
+  if (error.code === 'over_request_rate_limit' || error.code === 'over_email_send_rate_limit') return 'Too many attempts. Wait a moment and try again.'
+  if (error.code === 'user_already_exists') return 'An account may already exist. Try signing in.'
+  logClientError('Supabase authentication', error)
+  return 'Authentication failed. Check your details and try again.'
 }
 
 export const supabaseAuthProvider: AuthProvider = {
@@ -50,12 +57,13 @@ export const supabaseAuthProvider: AuthProvider = {
         password,
         options: { data: { name: name.trim() } },
       })
-      if (error) return { error: error.message }
+      if (error) return { error: authErrorMessage(error) }
       if (!data.user) return { error: 'Account creation did not return a user.' }
       if (!data.session) return { error: 'Check your email to confirm the account, then sign in.' }
       return { user: toAppUser(data.user) }
     } catch (error) {
-      return { error: errorMessage(error, 'Could not create the account.') }
+      logClientError('create account', error)
+      return { error: 'Could not create the account. Please try again.' }
     }
   },
 
@@ -63,11 +71,12 @@ export const supabaseAuthProvider: AuthProvider = {
     if (!isSupabaseConfigured) return { error: 'Backend is not configured. Add the Supabase URL and public key to .env.' }
     try {
       const { data, error } = await requireSupabase().auth.signInWithPassword({ email: email.trim().toLowerCase(), password })
-      if (error) return { error: error.message }
+      if (error) return { error: authErrorMessage(error) }
       if (!data.user) return { error: 'Sign in did not return a user.' }
       return { user: toAppUser(data.user) }
     } catch (error) {
-      return { error: errorMessage(error, 'Could not sign in.') }
+      logClientError('sign in', error)
+      return { error: 'Could not sign in. Please check the connection and try again.' }
     }
   },
 
@@ -93,14 +102,22 @@ export const supabaseAuthProvider: AuthProvider = {
         provider: 'google',
         options: { redirectTo: window.location.origin },
       })
-      return error ? { error: error.message } : { redirecting: true }
+      if (error) {
+        logClientError('start Google OAuth', error)
+        return { error: 'Google sign in could not be started. Please try again.' }
+      }
+      return { redirecting: true }
     } catch (error) {
-      return { error: errorMessage(error, 'Google sign in could not be started.') }
+      logClientError('start Google OAuth', error)
+      return { error: 'Google sign in could not be started. Please try again.' }
     }
   },
 
   async logout() {
     const { error } = await requireSupabase().auth.signOut()
-    if (error) throw error
+    if (error) {
+      logClientError('sign out', error)
+      throw new Error('Could not end the secure session. Please try again.')
+    }
   },
 }

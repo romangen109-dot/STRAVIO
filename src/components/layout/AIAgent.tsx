@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { ArrowRight, Check, ChevronDown, Command, Cpu, FileText, Maximize2, Minimize2, MoreHorizontal, PanelRightClose, Sparkles, Trash2 } from 'lucide-react'
 import { clearStrategyMessages, getStrategyMessages, requestAgentResponse, resolveAgentProposal } from '../../data/chatService'
+import { logClientError } from '../../data/errorHandling'
 import type { AgentContext, AgentJob, AgentMessage, AgentProposal, AgentProposalStatus } from '../../types'
 import { hasStrategyProgress } from '../strategy/useStrategy'
 import { AgentMessage as AgentMessageView } from '../ai/AgentMessage'
@@ -48,6 +49,7 @@ export function AIAgent({ onClose, getContext, initialPrompt, onPromptHandled, o
   const [job, setJob] = useState<AgentJob | null>(null)
   const [menuOpen, setMenuOpen] = useState(false)
   const [isFullscreen, setIsFullscreen] = useState(false)
+  const [aiConnected, setAIConnected] = useState<boolean | null>(null)
   const [providerError, setProviderError] = useState('')
   const jobId = useRef(0)
   const processedJobId = useRef(0)
@@ -69,7 +71,8 @@ export function AIAgent({ onClose, getContext, initialPrompt, onPromptHandled, o
     getStrategyMessages(user.id, strategyId).then((history) => {
       if (active) setChats((current) => ({ ...current, [strategyId]: history }))
     }).catch((historyError: unknown) => {
-      if (active) setProviderError(historyError instanceof Error ? historyError.message : 'Could not load the AI conversation.')
+      logClientError('load AI conversation', historyError)
+      if (active) setProviderError('Could not load the AI conversation. Please try again.')
     }).finally(() => {
       if (active) setHistoryLoading(false)
     })
@@ -93,10 +96,19 @@ export function AIAgent({ onClose, getContext, initialPrompt, onPromptHandled, o
     setJob({ id: currentJobId, title: 'Reading project context', result: '', status: 'thinking', source: 'chat', strategyId: requestStrategyId })
     try {
       const response = await requestAgentResponse(requestContext, prompt)
+      setAIConnected(response.connected)
       setChats((current) => ({ ...current, [requestStrategyId]: (current[requestStrategyId] ?? []).map((message) => message.id === pendingUserMessage.id ? response.userMessage : message) }))
       setJob((current) => current?.id === currentJobId ? { ...current, title: response.connected ? 'Server-side AI analysis' : 'AI provider not connected', result: response.message.content, proposal: response.message.proposal, status: 'analyzing' } : current)
     } catch (requestError) {
-      setProviderError(requestError instanceof Error ? requestError.message : 'AI request failed. Your data was not changed.')
+      logClientError('AI request', requestError)
+      try {
+        const savedHistory = await getStrategyMessages(user.id, requestStrategyId)
+        setChats((current) => ({ ...current, [requestStrategyId]: savedHistory }))
+      } catch (historyError) {
+        logClientError('reload AI conversation after failed request', historyError)
+        setChats((current) => ({ ...current, [requestStrategyId]: (current[requestStrategyId] ?? []).filter((message) => message.id !== pendingUserMessage.id) }))
+      }
+      setProviderError('AI request failed. Your data was not changed. Please try again.')
       setJob((current) => current?.id === currentJobId ? null : current)
     }
   }
@@ -135,7 +147,10 @@ export function AIAgent({ onClose, getContext, initialPrompt, onPromptHandled, o
     jobId.current += 1
     setJob(null)
     if (strategyId === 'no-active-strategy') return
-    void clearStrategyMessages(user.id, strategyId).then(() => setChats((current) => ({ ...current, [strategyId]: [] }))).catch((clearError: unknown) => setProviderError(clearError instanceof Error ? clearError.message : 'Could not clear the conversation.'))
+    void clearStrategyMessages(user.id, strategyId).then(() => setChats((current) => ({ ...current, [strategyId]: [] }))).catch((clearError: unknown) => {
+      logClientError('clear AI conversation', clearError)
+      setProviderError('Could not clear the conversation. Please try again.')
+    })
     setMenuOpen(false)
   }
 
@@ -169,7 +184,7 @@ export function AIAgent({ onClose, getContext, initialPrompt, onPromptHandled, o
     <div className="agent-context"><span className="context-signal" /><span>STRATEGY CONTEXT</span><span className="context-divider" /><FileText size={12} /><span>{contextLabel}</span><ChevronDown size={12} /></div>
     <div className="agent-scroll-area">
       <div className="agent-intro"><div className="agent-orb"><Sparkles size={17} /></div><span className="eyebrow">STRAVIO INTELLIGENCE <i /> SERVER-SIDE</span><h2>Strategy-aware assistance.</h2><p>Контекст загружается сервером из вашей стратегии, документов и Planning. Предложения не применяются без подтверждения.</p><div className="agent-model-note"><Cpu size={12} /> SECURE SERVER AI PROVIDER</div></div>
-      <div className="agent-connection-note"><span>i</span><div><strong>AI Agent is not connected yet.</strong><small>Настройте AI_API_KEY в secrets Supabase Edge Function. Изменения стратегии и задач требуют подтверждения.</small></div></div>
+      {aiConnected === false ? <div className="agent-connection-note"><span>i</span><div><strong>AI Agent is not connected yet.</strong><small>Настройте AI_API_KEY в secrets Supabase Edge Function. Изменения стратегии и задач требуют подтверждения.</small></div></div> : aiConnected === null ? <div className="agent-connection-note"><span>i</span><div><strong>Secure server AI provider</strong><small>Доступность провайдера проверяется при первом запросе.</small></div></div> : null}
 
       <div className="agent-actions-block"><div className="agent-section-label"><span>STRATEGY ACTIONS</span><span>06</span></div><div className="agent-action-list">{agentActions.map((action, index) => <button className="agent-action" key={action.id} onClick={() => sendPrompt(action.prompt)} disabled={historyLoading || job?.status === 'thinking' || job?.status === 'analyzing'}><span className="agent-action-number">0{index + 1}</span><span>{action.label}</span><ArrowRight size={13} /></button>)}</div></div>
 

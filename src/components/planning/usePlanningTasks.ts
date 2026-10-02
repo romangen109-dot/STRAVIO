@@ -3,6 +3,7 @@ import type { PlanningTask, StrategyStagePlan } from '../../types'
 import { createPlanningTask, createPlanningTaskRecords, deletePlanningTask, getPlanningTasks, updatePlanningTask } from '../../data/taskService'
 import { useCurrentUser } from '../auth/UserContext'
 import { PLANNING_TASKS_CHANGED_EVENT } from '../../data/planningTasks'
+import { logClientError } from '../../data/errorHandling'
 
 export type NewPlanningTask = Omit<PlanningTask, 'id' | 'createdAt' | 'userId'>
 
@@ -11,15 +12,18 @@ export function usePlanningTasks() {
   const [tasks, setTasks] = useState<PlanningTask[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [loadError, setLoadError] = useState('')
   const [error, setError] = useState('')
 
   const refresh = useCallback(async () => {
     try {
       const stored = await getPlanningTasks(user.id)
       setTasks(stored)
+      setLoadError('')
       setError('')
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : 'Could not load Planning tasks.')
+      logClientError('load Planning tasks', loadError)
+      setLoadError('Could not load Planning tasks. Please check the connection and try again.')
     } finally {
       setLoading(false)
     }
@@ -40,7 +44,8 @@ export function usePlanningTasks() {
       window.dispatchEvent(new Event(PLANNING_TASKS_CHANGED_EVENT))
       return true
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : 'Could not create the task.')
+      logClientError('create Planning task', saveError)
+      setError('Task was not created. Please check the connection and try again.')
       return false
     } finally {
       setSaving(false)
@@ -56,7 +61,8 @@ export function usePlanningTasks() {
       window.dispatchEvent(new Event(PLANNING_TASKS_CHANGED_EVENT))
       return true
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : 'Could not update the task.')
+      logClientError('update Planning task', saveError)
+      setError('Task was not updated. Please check the connection and try again.')
       return false
     } finally {
       setSaving(false)
@@ -72,7 +78,8 @@ export function usePlanningTasks() {
       window.dispatchEvent(new Event(PLANNING_TASKS_CHANGED_EVENT))
       return true
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : 'Could not delete the task.')
+      logClientError('delete Planning task', saveError)
+      setError('Task was not deleted. Please check the connection and try again.')
       return false
     } finally {
       setSaving(false)
@@ -101,12 +108,13 @@ export function usePlanningTasks() {
       window.dispatchEvent(new Event(PLANNING_TASKS_CHANGED_EVENT))
       return created.length
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : 'Could not create tasks from Stage Plans.')
+      logClientError('create tasks from Stage Plans', saveError)
+      setError('Tasks were not created. Please check the connection and try again.')
       return 0
     } finally {
       setSaving(false)
     }
   }
 
-  return { tasks, createTask, updateTask, deleteTask, createFromStagePlans, loading, saving, error }
+  return { tasks, createTask, updateTask, deleteTask, createFromStagePlans, loading, saving, loadError, error }
 }

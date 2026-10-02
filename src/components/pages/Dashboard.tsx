@@ -30,8 +30,8 @@ type Props = {
 }
 
 export function Dashboard({ documents, activity, migrationNotice, onOpenStrategy, onOpenDocuments, onOpenDocument, onOpenAgent, onOpenPlanning }: Props) {
-  const { strategy, updateStrategy, loading: strategyLoading, error: strategyError } = useStrategy()
-  const { tasks, loading: tasksLoading, error: tasksError } = usePlanningTasks()
+  const { strategy, updateStrategy, loading: strategyLoading, loadError: strategyLoadError } = useStrategy()
+  const { tasks, loading: tasksLoading, loadError: tasksLoadError } = usePlanningTasks()
   const [pendingStep, setPendingStep] = useState<number | null>(null)
   const started = hasStrategyProgress(strategy)
   const currentStage = strategy.completed ? 'Completed' : stages[Math.min(strategy.workflowStep, stages.length - 1)]
@@ -69,7 +69,7 @@ export function Dashboard({ documents, activity, migrationNotice, onOpenStrategy
   }, [onOpenStrategy, pendingStep, strategy.workflowStep])
 
   if (strategyLoading || tasksLoading) return <div className="dashboard-page"><section className="workspace-panel dashboard-active" aria-live="polite">Loading your cloud workspace…</section></div>
-  if (strategyError || tasksError) return <div className="dashboard-page"><section className="workspace-panel dashboard-active" role="alert"><h2>Workspace data could not be loaded.</h2><p>{strategyError || tasksError}</p><button className="outline-button" onClick={() => window.location.reload()}>Reload workspace</button></section></div>
+  if (strategyLoadError || tasksLoadError) return <div className="dashboard-page"><section className="workspace-panel dashboard-active" role="alert"><h2>Workspace data could not be loaded.</h2><p>{strategyLoadError || tasksLoadError}</p><button className="outline-button" onClick={() => window.location.reload()}>Reload workspace</button></section></div>
 
   return <div className="dashboard-page">
     <header className="dashboard-welcome">

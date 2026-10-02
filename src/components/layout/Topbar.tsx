@@ -1,17 +1,19 @@
 import { useEffect, useRef, useState } from 'react'
-import { Bell, ChevronDown, Command, Search, Sparkles, X } from 'lucide-react'
+import { Command, Search, Sparkles, X } from 'lucide-react'
+import { useCurrentUser } from '../auth/UserContext'
+import type { WorkspaceSection } from '../../types'
 
 type Props = {
   query: string
   onQueryChange: (query: string) => void
   onToggleAgent: () => void
   agentOpen: boolean
+  onNavigate: (section: WorkspaceSection) => void
 }
 
-export function Topbar({ query, onQueryChange, onToggleAgent, agentOpen }: Props) {
+export function Topbar({ query, onQueryChange, onToggleAgent, agentOpen, onNavigate }: Props) {
+  const user = useCurrentUser()
   const [menuOpen, setMenuOpen] = useState(false)
-  const [notificationsOpen, setNotificationsOpen] = useState(false)
-  const [projectsOpen, setProjectsOpen] = useState(false)
   const searchInput = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -44,27 +46,11 @@ export function Topbar({ query, onQueryChange, onToggleAgent, agentOpen }: Props
       </label>
       <div className="topbar-actions">
         <div className="topbar-menu-wrap">
-          <button className="project-switcher" onClick={() => { setProjectsOpen(!projectsOpen); setNotificationsOpen(false) }} aria-expanded={projectsOpen}>
-            <span className="project-switcher-dot" /> My Projects <ChevronDown size={13} />
-          </button>
-          {projectsOpen && <div className="topbar-popover project-popover">
-            <span className="popover-label">YOUR WORKSPACES</span>
-            <button className="popover-project active"><span className="project-switcher-dot" /><span><strong>Tech Education Platform</strong><small>Личный проект</small></span></button>
-            <button className="popover-project" onClick={() => setProjectsOpen(false)}><span className="project-add-mark">+</span><span><strong>Создать проект</strong><small>Новый стратегический workspace</small></span></button>
-          </div>}
+          <span className="project-switcher"><span className="project-switcher-dot" /> Stravio workspace</span>
         </div>
         <div className="topbar-menu-wrap">
-          <button className="icon-button notification-button" onClick={() => { setNotificationsOpen(!notificationsOpen); setProjectsOpen(false) }} aria-label="Уведомления" aria-expanded={notificationsOpen}>
-            <Bell size={16} /><span className="notification-dot" />
-          </button>
-          {notificationsOpen && <div className="topbar-popover notification-popover">
-            <div className="popover-heading"><strong>Уведомления</strong><span className="unread-count">1 новое</span></div>
-            <div className="notification-item"><span className="notification-icon"><Sparkles size={14} /></span><span><strong>Обзор проекта готов</strong><small>AI-агент · 12 минут назад</small></span></div>
-          </div>}
-        </div>
-        <div className="topbar-menu-wrap">
-          <button className="avatar-button" onClick={() => setMenuOpen(!menuOpen)} aria-label="Меню профиля" aria-expanded={menuOpen}>AK</button>
-          {menuOpen && <div className="topbar-popover profile-popover"><strong>Alex Kim</strong><small>alex@stravio.app</small><button onClick={() => setMenuOpen(false)}>Настройки профиля</button></div>}
+          <button className="avatar-button" onClick={() => setMenuOpen(!menuOpen)} aria-label="Меню профиля" aria-expanded={menuOpen}>{user.name.split(/\s+/).map((part) => part[0]).slice(0, 2).join('').toUpperCase()}</button>
+          {menuOpen && <div className="topbar-popover profile-popover"><strong>{user.name}</strong><small>{user.email}</small><button onClick={() => { setMenuOpen(false); onNavigate('Settings') }}>Настройки профиля</button></div>}
         </div>
         <button className={`agent-toggle ${agentOpen ? 'is-active' : ''}`} onClick={onToggleAgent} aria-label={agentOpen ? 'Скрыть AI-агента' : 'Показать AI-агента'} title={agentOpen ? 'Скрыть AI-агента' : 'Показать AI-агента'}><Sparkles size={15} /></button>
       </div>

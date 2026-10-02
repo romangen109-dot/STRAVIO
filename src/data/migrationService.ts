@@ -4,6 +4,8 @@ import type { Json } from './database.types'
 import { requireSupabase } from './supabaseClient'
 import { getStrategies } from './strategyService'
 import { PLANNING_TASKS_CHANGED_EVENT } from './planningTasks'
+import { invalidatePlanningTaskCache } from './taskService'
+import { logClientError } from './errorHandling'
 
 type JsonRecord = Record<string, unknown>
 type ImportPayload = {
@@ -26,6 +28,7 @@ const legacyKeys = {
   'ai-history': 'stravio.ai-chats.v1',
   activity: 'stravio.activity.v1',
 } as const
+const supportedActivityTypes = new Set(['strategy-created', 'strategy-updated', 'strategy-completed', 'document-generated', 'document-edited', 'document-deleted', 'task-created', 'task-completed', 'ai-action-applied'])
 
 function isRecord(value: unknown): value is JsonRecord {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -43,6 +46,17 @@ function findLocalAccount(email: string) {
 
 function stableId(userId: string, kind: string, originalId: string) {
   return `local-import:${userId}:${kind}:${encodeURIComponent(originalId)}`
+}
+
+function validTimestamp(value: unknown) {
+  if (typeof value !== 'string' || !Number.isFinite(Date.parse(value))) return undefined
+  return new Date(value).toISOString()
+}
+
+function validDate(value: unknown) {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return ''
+  const parsed = new Date(`${value}T00:00:00.000Z`)
+  return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value ? value : ''
 }
 
 function readLocalCollection<T>(localUserId: string, collection: keyof typeof legacyKeys): T | undefined {
@@ -83,8 +97,8 @@ function buildImportPayload(email: string, userId: string): ImportPayload {
     data: { ...strategy, id: strategyIds.get(id), userId },
     workflow_step: strategy.workflowStep,
     completed: strategy.completed,
-    created_at: strategy.createdAt,
-    updated_at: strategy.updatedAt,
+    created_at: validTimestamp(strategy.createdAt),
+    updated_at: validTimestamp(strategy.updatedAt),
   }))
 
   const documents = Array.isArray(localDocuments) ? localDocuments.filter(isRecord).map((document) => {
@@ -98,8 +112,8 @@ function buildImportPayload(email: string, userId: string): ImportPayload {
       content: typeof document.content === 'string' ? document.content : '',
       status: document.status === 'edited' ? 'edited' : 'ready',
       strategy_snapshot: { ...strategy, id: strategyIds.get(oldStrategyId), userId },
-      created_at: document.createdAt,
-      updated_at: document.updatedAt,
+      created_at: validTimestamp(document.createdAt),
+      updated_at: validTimestamp(document.updatedAt),
     }
   }) : []
 
@@ -113,9 +127,9 @@ function buildImportPayload(email: string, userId: string): ImportPayload {
       description: typeof task.description === 'string' ? task.description : '',
       status: task.status === 'completed' || task.status === 'in-progress' ? task.status : 'todo',
       priority: task.priority === 'high' || task.priority === 'low' ? task.priority : 'medium',
-      deadline: typeof task.deadline === 'string' ? task.deadline : '',
+      deadline: validDate(task.deadline),
       source_stage_plan_id: typeof task.sourceStagePlanId === 'string' ? task.sourceStagePlanId : null,
-      created_at: task.createdAt,
+      created_at: validTimestamp(task.createdAt),
     }
   }) : []
 
@@ -128,16 +142,16 @@ function buildImportPayload(email: string, userId: string): ImportPayload {
       let proposal = message.proposal
       if (isRecord(proposal) && proposal.kind === 'update-desired-state') proposal = { ...proposal, userId, strategyId: mappedStrategyId }
       if (isRecord(proposal) && proposal.kind === 'create-tasks' && Array.isArray(proposal.tasks)) proposal = { ...proposal, tasks: proposal.tasks.map((task) => isRecord(task) ? { ...task, userId, strategyId: mappedStrategyId } : task) }
-      messages.push({ id: stableId(userId, 'message', message.id), strategy_id: mappedStrategyId, role: message.role, content: message.content, proposal, created_at: message.createdAt })
+      messages.push({ id: stableId(userId, 'message', message.id), strategy_id: mappedStrategyId, role: message.role, content: message.content, proposal, created_at: validTimestamp(message.createdAt) })
     }
   }
 
   const activity = Array.isArray(localActivity) ? localActivity.filter(isRecord).flatMap((entry) => {
-    if (typeof entry.id !== 'string' || typeof entry.type !== 'string') return []
+    if (typeof entry.id !== 'string' || typeof entry.type !== 'string' || !supportedActivityTypes.has(entry.type)) return []
     const strategyId = typeof entry.strategyId === 'string' ? strategyIds.get(entry.strategyId) : undefined
     if (typeof entry.strategyId === 'string' && !strategyId) return []
     const documentId = typeof entry.documentId === 'string' ? documentIds.get(entry.documentId) : undefined
-    return [{ id: stableId(userId, 'activity', entry.id), strategy_id: strategyId, document_id: documentId, type: entry.type, title: typeof entry.title === 'string' ? entry.title : entry.type, created_at: entry.createdAt }]
+    return [{ id: stableId(userId, 'activity', entry.id), strategy_id: strategyId, document_id: documentId, type: entry.type, title: typeof entry.title === 'string' ? entry.title : entry.type, created_at: validTimestamp(entry.createdAt) }]
   }) : []
 
   return { version: '1', strategies, documents, tasks, messages, activity }
@@ -156,9 +170,13 @@ export async function importLocalWorkspace(email: string, userId: string) {
   const payload = buildImportPayload(email, userId)
   const normalizedPayload = JSON.parse(JSON.stringify(payload)) as Json
   const { data, error } = await requireSupabase().rpc('import_local_workspace', { payload: normalizedPayload })
-  if (error) throw error
+  if (error) {
+    logClientError('import local workspace', error)
+    throw new Error('Local data could not be imported. Please check the connection and try again.')
+  }
   const strategies = await getStrategies(userId)
   if (strategies[0]) window.dispatchEvent(new CustomEvent('stravio:strategy-data', { detail: strategies[0] }))
+  invalidatePlanningTaskCache(userId)
   window.dispatchEvent(new Event(PLANNING_TASKS_CHANGED_EVENT))
   window.dispatchEvent(new Event('stravio:workspace-refresh'))
   return data as LocalImportPreview['counts']

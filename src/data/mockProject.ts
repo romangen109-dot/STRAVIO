@@ -11,11 +11,7 @@ export const navigation: { label: WorkspaceSection; title?: string; icon: string
   { label: 'Overview', title: 'Dashboard', icon: 'layout' },
   { label: 'Strategy', title: 'Strategy Algorithm', icon: 'compass' },
   { label: 'Strategy Documents', icon: 'strategyDocuments' },
-  { label: 'Research', icon: 'search' },
-  { label: 'Documents', icon: 'files' },
   { label: 'Planning', icon: 'calendar' },
-  { label: 'Tasks', icon: 'check' },
-  { label: 'Insights', icon: 'chart' },
   { label: 'Settings', icon: 'settings' },
 ]
 

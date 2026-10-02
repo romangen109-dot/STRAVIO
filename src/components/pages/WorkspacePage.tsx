@@ -24,7 +24,7 @@ export function WorkspacePage({ section, fileName, fileContent }: Props) {
   const title = fileName ?? current.title
   return <div className="secondary-page">
     <div className="page-crumb"><span>PROJECT</span><ChevronRight size={12} /><span>{current.eyebrow}</span></div>
-    <div className="secondary-heading"><div><span className="eyebrow">{current.eyebrow} <i /> UPDATED JUST NOW</span><h1>{title}</h1><p>{fileName ? 'Документ проекта · Markdown' : current.description}</p></div><button className="outline-button"><Plus size={14} /> Создать</button></div>
+    <div className="secondary-heading"><div><span className="eyebrow">{current.eyebrow} <i /> UPDATED JUST NOW</span><h1>{title}</h1><p>{fileName ? 'Документ проекта · Markdown' : current.description}</p></div>{!fileName && <button className="outline-button"><Plus size={14} /> Создать</button>}</div>
     {fileName ? <DocumentPreview fileName={fileName} content={fileContent} /> : section === 'Overview' ? <Overview /> : section === 'Tasks' ? <TaskBoard /> : section === 'Planning' ? <Planning /> : section === 'Research' ? <Research /> : section === 'Documents' ? <Documents /> : section === 'Insights' ? <Insights /> : <Settings />}
   </div>
 }

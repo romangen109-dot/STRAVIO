@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { StrategyData } from '../../types'
 import { createInitialStrategy } from '../../data/strategyAlgorithm'
+import { logClientError } from '../../data/errorHandling'
 import { getCachedActiveStrategy, getStrategies, updateStrategy as persistStrategy } from '../../data/strategyService'
 import { useCurrentUser } from '../auth/UserContext'
 
@@ -75,6 +76,7 @@ export function useStrategy() {
   const [strategy, setStrategy] = useState<StrategyData>(() => loadStrategyData(user.id))
   const [loading, setLoading] = useState(true)
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const [loadError, setLoadError] = useState('')
   const [error, setError] = useState('')
   const lastSaved = useRef('')
 
@@ -86,9 +88,12 @@ export function useStrategy() {
       const loaded = strategies[0] ?? createInitialStrategy(user.id)
       lastSaved.current = JSON.stringify(loaded)
       setStrategy(loaded)
+      setLoadError('')
       setError('')
+      window.dispatchEvent(new CustomEvent(STRATEGY_DATA_EVENT, { detail: loaded }))
     }).catch((loadError: unknown) => {
-      if (active) setError(loadError instanceof Error ? loadError.message : 'Could not load the saved strategy.')
+      logClientError('load strategy', loadError)
+      if (active) setLoadError('Could not load your strategy. Please check the connection and try again.')
     }).finally(() => {
       if (active) setLoading(false)
     })
@@ -110,8 +115,9 @@ export function useStrategy() {
         setError('')
       }).catch((saveError: unknown) => {
         if (!active) return
+        logClientError('save strategy', saveError)
         setSaveState('error')
-        setError(saveError instanceof Error ? saveError.message : 'Could not save the strategy.')
+        setError('Strategy was not saved. Please check the connection and try again.')
       })
     }, 500)
     return () => { active = false; window.clearTimeout(timer) }
@@ -140,5 +146,5 @@ export function useStrategy() {
     })
   }
 
-  return { strategy, updateStrategy, loading, saveState, error }
+  return { strategy, updateStrategy, loading, loadError, saveState, error }
 }

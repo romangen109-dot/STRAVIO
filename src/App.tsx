@@ -14,10 +14,11 @@ import { createStrategyDocumentRecord, deleteStrategyDocumentRecord, getStrategy
 import { PLANNING_TASKS_CHANGED_EVENT } from './data/planningTasks'
 import { resolveAgentProposal } from './data/chatService'
 import { getRecentActivity } from './data/activityService'
-import { getPlanningTasks } from './data/taskService'
+import { getPlanningTasks, invalidatePlanningTaskCache } from './data/taskService'
 import { getStrategy } from './data/strategyService'
 import { supabaseAuthProvider } from './data/supabaseAuth'
 import { getUserDataStatus, localStorageDataProvider } from './data/storage'
+import { logClientError } from './data/errorHandling'
 import { hasStrategyProgress, loadStrategyData, saveStrategyData, STRATEGY_DATA_EVENT } from './components/strategy/useStrategy'
 import type { AgentContext, AgentProposal, PlanningTask, ProjectFile, StrategyData, StrategyDocument, StrategyActivity, User, WorkspaceSection, WorkspaceTab } from './types'
 
@@ -68,7 +69,8 @@ export default function App() {
     supabaseAuthProvider.getCurrentUser().then((user) => {
       if (active) setCurrentUser(user)
     }).catch((error: unknown) => {
-      if (active) setAuthError(error instanceof Error ? error.message : 'Could not restore the cloud session.')
+      logClientError('restore auth session', error)
+      if (active) setAuthError('Could not restore your secure session. Please check the connection and try again.')
     }).finally(() => {
       if (active) setAuthReady(true)
     })
@@ -90,6 +92,8 @@ function AuthenticatedWorkspace({ user, migrationNotice, onLogout, onUserUpdated
   const [strategyDocuments, setStrategyDocuments] = useState<StrategyDocument[]>([])
   const [activity, setActivity] = useState<StrategyActivity[]>([])
   const [planningTasks, setPlanningTasks] = useState<PlanningTask[]>([])
+  const [workspaceLoading, setWorkspaceLoading] = useState(true)
+  const [workspaceLoadError, setWorkspaceLoadError] = useState('')
   const [workspaceError, setWorkspaceError] = useState('')
   const [planningStrategyOverride, setPlanningStrategyOverride] = useState<StrategyData | null>(null)
   const [agentPrompt, setAgentPrompt] = useState<{ id: string; prompt: string; currentDocument?: AgentContext['currentDocument'] }>()
@@ -105,20 +109,23 @@ function AuthenticatedWorkspace({ user, migrationNotice, onLogout, onUserUpdated
   }, [files, user.id])
 
   const refreshTasks = useCallback(() => {
-    void getPlanningTasks(user.id).then(setPlanningTasks).catch((error: unknown) => setWorkspaceError(error instanceof Error ? error.message : 'Could not load Planning tasks.'))
+    void getPlanningTasks(user.id).then(setPlanningTasks).catch((error: unknown) => { logClientError('refresh Planning tasks', error); setWorkspaceError('Could not refresh Planning tasks. Please try again.') })
   }, [user.id])
 
   const refreshRecentActivity = useCallback(() => {
-    void getRecentActivity(user.id).then(setActivity).catch((error: unknown) => setWorkspaceError(error instanceof Error ? error.message : 'Could not load activity.'))
+    void getRecentActivity(user.id).then(setActivity).catch((error: unknown) => { logClientError('refresh activity', error); setWorkspaceError('Could not refresh activity. Please try again.') })
   }, [user.id])
 
   const refreshWorkspaceData = useCallback(() => {
+    setWorkspaceLoading(true)
+    setWorkspaceLoadError('')
     void Promise.all([getStrategyDocuments(user.id), getRecentActivity(user.id), getPlanningTasks(user.id)]).then(([documents, recentActivity, tasks]) => {
       setStrategyDocuments(documents)
       setActivity(recentActivity)
       setPlanningTasks(tasks)
+      setWorkspaceLoading(false)
       setWorkspaceError('')
-    }).catch((error: unknown) => setWorkspaceError(error instanceof Error ? error.message : 'Could not refresh cloud workspace data.'))
+    }).catch((error: unknown) => { logClientError('refresh workspace', error); setWorkspaceLoading(false); setWorkspaceLoadError('Workspace data could not be loaded. Please check the connection and try again.') })
   }, [user.id])
 
   useEffect(() => {
@@ -128,9 +135,15 @@ function AuthenticatedWorkspace({ user, migrationNotice, onLogout, onUserUpdated
       setStrategyDocuments(documents)
       setActivity(recentActivity)
       setPlanningTasks(tasks)
+      setWorkspaceLoading(false)
+      setWorkspaceLoadError('')
       setWorkspaceError('')
     }).catch((error: unknown) => {
-      if (active) setWorkspaceError(error instanceof Error ? error.message : 'Could not load cloud workspace data.')
+      logClientError('load workspace data', error)
+      if (active) {
+        setWorkspaceLoading(false)
+        setWorkspaceLoadError('Workspace data could not be loaded. Please check the connection and try again.')
+      }
     })
     return () => { active = false }
   }, [user.id])
@@ -139,6 +152,9 @@ function AuthenticatedWorkspace({ user, migrationNotice, onLogout, onUserUpdated
   useEffect(() => {
     window.dispatchEvent(new CustomEvent('stravio:backend-error', { detail: workspaceError }))
   }, [workspaceError])
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent('stravio:workspace-load-state', { detail: { loading: workspaceLoading, error: workspaceLoadError } }))
+  }, [workspaceLoading, workspaceLoadError])
   const syncStrategyDocuments = useCallback((event: Event) => {
     documentSyncQueue.current = documentSyncQueue.current.then(async () => {
       const strategy = event instanceof CustomEvent && event.detail ? event.detail as StrategyData : loadStrategyData(user.id)
@@ -149,7 +165,7 @@ function AuthenticatedWorkspace({ user, migrationNotice, onLogout, onUserUpdated
       setStrategyDocuments(updated)
       setActivity(await getRecentActivity(user.id))
       setWorkspaceError('')
-    }).catch((error: unknown) => setWorkspaceError(error instanceof Error ? error.message : 'Could not synchronize strategy documents.'))
+    }).catch((error: unknown) => { logClientError('sync strategy documents', error); setWorkspaceError('Could not refresh strategy documents. Please try again.') })
   }, [user.id])
 
   useEffect(() => {
@@ -217,14 +233,18 @@ function AuthenticatedWorkspace({ user, migrationNotice, onLogout, onUserUpdated
       || (proposal.kind === 'create-tasks' && (!proposal.tasks.length || proposal.tasks.some((task) => task.userId !== user.id || task.strategyId !== strategyId)))) return false
     try {
       await resolveAgentProposal(strategyId, messageId, 'apply')
-      if (proposal.kind === 'create-tasks') window.dispatchEvent(new Event(PLANNING_TASKS_CHANGED_EVENT))
+      if (proposal.kind === 'create-tasks') {
+        invalidatePlanningTaskCache(user.id)
+        window.dispatchEvent(new Event(PLANNING_TASKS_CHANGED_EVENT))
+      }
       else {
         const updated = await getStrategy(user.id, strategyId)
         if (updated) window.dispatchEvent(new CustomEvent(STRATEGY_DATA_EVENT, { detail: updated }))
       }
       return true
     } catch (error) {
-      setWorkspaceError(error instanceof Error ? error.message : 'Could not apply the AI proposal.')
+      logClientError('apply AI proposal', error)
+      setWorkspaceError('The AI change was not applied. Please check the connection and try again.')
       return false
     }
   }
@@ -261,7 +281,8 @@ function AuthenticatedWorkspace({ user, migrationNotice, onLogout, onUserUpdated
       setWorkspaceError('')
       return true
     } catch (error) {
-      setWorkspaceError(error instanceof Error ? error.message : 'Could not create the strategy document.')
+      logClientError('create strategy document', error)
+      setWorkspaceError('The document was not created. Please check the connection and try again.')
       return false
     }
   }
@@ -274,21 +295,25 @@ function AuthenticatedWorkspace({ user, migrationNotice, onLogout, onUserUpdated
       setWorkspaceError('')
       return true
     } catch (error) {
-      setWorkspaceError(error instanceof Error ? error.message : 'Could not save the strategy document.')
+      logClientError('save strategy document', error)
+      setWorkspaceError('The document was not saved. Please check the connection and try again.')
       return false
     }
   }
 
   const duplicateStrategyDocument = async (document: StrategyDocument) => {
     const now = new Date().toISOString()
-    if (document.userId !== user.id) return
+    if (document.userId !== user.id) return false
     try {
       const duplicate = await createStrategyDocumentRecord({ ...document, id: createDocumentId(), title: `${document.title} (Copy)`, createdAt: now, updatedAt: now, status: 'ready', strategy: structuredClone(document.strategy) })
       setStrategyDocuments((current) => [duplicate, ...current])
       refreshRecentActivity()
       openTab({ id: `strategy-document:${duplicate.id}`, label: duplicate.title, kind: 'strategy-document', section: 'Strategy Documents', strategyDocumentId: duplicate.id })
+      return true
     } catch (error) {
-      setWorkspaceError(error instanceof Error ? error.message : 'Could not duplicate the strategy document.')
+      logClientError('duplicate strategy document', error)
+      setWorkspaceError('The document was not duplicated. Please try again.')
+      return false
     }
   }
 
@@ -298,8 +323,9 @@ function AuthenticatedWorkspace({ user, migrationNotice, onLogout, onUserUpdated
       setStrategyDocuments((current) => current.filter((item) => item.id !== id))
       refreshRecentActivity()
     } catch (error) {
-      setWorkspaceError(error instanceof Error ? error.message : 'Could not delete the strategy document.')
-      return
+      logClientError('delete strategy document', error)
+      setWorkspaceError('The document was not deleted. Please try again.')
+      return false
     }
     const nextTabs = tabs.filter((tab) => tab.strategyDocumentId !== id)
     setTabs(nextTabs)
@@ -309,6 +335,7 @@ function AuthenticatedWorkspace({ user, migrationNotice, onLogout, onUserUpdated
       setActiveTabId(listTab.id)
       setActiveSection('Strategy Documents')
     }
+    return true
   }
 
   const saveProfileName = async (name: string) => {
@@ -323,7 +350,7 @@ function AuthenticatedWorkspace({ user, migrationNotice, onLogout, onUserUpdated
     window.location.reload()
   }
 
-  const addTab = () => navigate('Documents')
+  const addTab = () => navigate('Strategy Documents')
 
   return <AppLayout activeSection={activeSection} tabs={tabs} activeTabId={activeTabId} files={visibleFiles} activeFile={activeFile?.id} query={query} agentOpen={agentOpen} agentContext={getAgentContext} agentPrompt={agentPrompt} sidebarOpen={sidebarOpen} onQueryChange={setQuery} onNavigate={navigate} onOpenFile={openFile} onCreateFile={createFile} onSelectTab={openTab} onCloseTab={closeTab} onAddTab={addTab} onToggleAgent={() => setAgentOpen((open) => !open)} onCloseAgent={() => setAgentOpen(false)} onAgentPromptHandled={handleAgentPrompt} onApplyAgentProposal={handleAgentProposal} onToggleSidebar={() => setSidebarOpen((open) => !open)}>
     {activeTab.kind === 'strategy-document' ? <StrategyDocuments documents={strategyDocuments} selectedDocumentId={activeTab.strategyDocumentId} onOpen={(document) => openTab({ id: `strategy-document:${document.id}`, label: document.title, kind: 'strategy-document', section: 'Strategy Documents', strategyDocumentId: document.id })} onSave={saveStrategyDocument} onDelete={deleteStrategyDocument} onDuplicate={duplicateStrategyDocument} onBack={() => navigate('Strategy Documents')} onOpenPlanning={openPlanningForStrategy} onAskAI={askAgent} /> : activeTab.kind === 'file' ? <WorkspacePage section="Documents" fileName={activeFile?.name ?? activeTab.label} fileContent={activeFile?.content} /> : activeTab.section === 'Strategy' ? <Strategy onGenerateDocument={generateStrategyDocument} onAskAI={askAgent} /> : activeTab.section === 'Strategy Documents' ? <StrategyDocuments documents={strategyDocuments} onOpen={(document) => openTab({ id: `strategy-document:${document.id}`, label: document.title, kind: 'strategy-document', section: 'Strategy Documents', strategyDocumentId: document.id })} onSave={saveStrategyDocument} onDelete={deleteStrategyDocument} onDuplicate={duplicateStrategyDocument} onBack={() => navigate('Strategy Documents')} onOpenPlanning={openPlanningForStrategy} onAskAI={askAgent} /> : activeTab.section === 'Overview' ? <Dashboard documents={strategyDocuments} activity={activity} migrationNotice={migrationNotice} onOpenStrategy={() => navigate('Strategy')} onOpenDocuments={() => navigate('Strategy Documents')} onOpenDocument={(document) => openTab({ id: `strategy-document:${document.id}`, label: document.title, kind: 'strategy-document', section: 'Strategy Documents', strategyDocumentId: document.id })} onOpenAgent={askAgent} onOpenPlanning={() => navigate('Planning')} /> : activeTab.section === 'Planning' ? <Planning strategyOverride={planningStrategyOverride} onCreateStrategy={() => navigate('Strategy')} onAskAI={askAgent} /> : activeTab.section === 'Settings' ? <AccountSettings user={user} storageStatus={getUserDataStatus(user.id)} migrationNotice={migrationNotice} onSaveName={saveProfileName} onLogout={onLogout} onDeleteLocalData={deleteLocalUserData} /> : <WorkspacePage section={activeTab.section ?? 'Overview'} />}

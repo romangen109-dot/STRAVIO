@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react'
 import { ArrowRight, LockKeyhole, Mail, ShieldCheck, UserRound } from 'lucide-react'
 import { supabaseAuthProvider, type AuthProvider } from '../../data/supabaseAuth'
 import { isSupabaseConfigured } from '../../data/supabaseClient'
+import { logClientError } from '../../data/errorHandling'
 import type { User } from '../../types'
 
 type Props = { authProvider?: AuthProvider; onAuthenticated: (user: User) => void; initialError?: string }
@@ -27,7 +28,8 @@ export function AuthScreen({ authProvider = supabaseAuthProvider, onAuthenticate
       if ('error' in result) setError(result.error)
       else if ('user' in result) onAuthenticated(result.user)
     } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : 'Authentication failed.')
+      logClientError('submit authentication form', submitError)
+      setError('Authentication failed. Check your details and try again.')
     } finally {
       setBusy(false)
     }
@@ -46,7 +48,8 @@ export function AuthScreen({ authProvider = supabaseAuthProvider, onAuthenticate
       if ('error' in result) setError(result.error)
       else if ('user' in result) onAuthenticated(result.user)
     } catch (loginError) {
-      setError(loginError instanceof Error ? loginError.message : 'Google sign in failed.')
+      logClientError('Google sign in', loginError)
+      setError('Google sign in could not be started. Please try again.')
     } finally {
       setBusy(false)
     }

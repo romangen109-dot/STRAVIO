@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { HardDrive, LogOut, Save, ShieldCheck, UserRound } from 'lucide-react'
 import type { User } from '../../types'
 import { getLocalImportPreview, importLocalWorkspace } from '../../data/migrationService'
+import { logClientError } from '../../data/errorHandling'
 
 type Props = {
   user: User
@@ -58,7 +59,8 @@ export function AccountSettings({ user, migrationNotice, onSaveName, onLogout }:
     try {
       await onLogout()
     } catch (logoutError) {
-      setError(logoutError instanceof Error ? logoutError.message : 'Could not end the cloud session.')
+      logClientError('end cloud session', logoutError)
+      setError('Could not end the secure session. Please try again.')
       setLoggingOut(false)
     }
   }
