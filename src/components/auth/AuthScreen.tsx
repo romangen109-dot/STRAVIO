@@ -73,7 +73,7 @@ export function AuthScreen({ authProvider = supabaseAuthProvider, onAuthenticate
         <button className="auth-submit" disabled={busy || !isSupabaseConfigured}>{busy ? 'Please wait…' : isRegister ? 'Create account' : 'Log in'} <ArrowRight size={15} /></button>
       </form>
       <p className="auth-switch">{isRegister ? 'Already have an account?' : "Don't have an account?"} <button onClick={changeMode}>{isRegister ? 'Log in' : 'Sign up'}</button></p>
-      <footer className="auth-footer"><span>STRAVIO</span><span>LOCAL DEVELOPMENT MODE</span></footer>
+      <footer className="auth-footer"><span>STRAVIO</span><span>SECURE CLOUD AUTH</span></footer>
     </section>
     <aside className="auth-side-note"><span className="auth-side-line" /><span>STRATEGY<br />STARTS WITH<br />CLARITY.</span><small>YOUR WORKSPACE<br />IS YOURS.</small></aside>
   </main>
