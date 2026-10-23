@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { StrategyData } from '../../types'
 import { createInitialStrategy } from '../../data/strategyAlgorithm'
 import { logClientError } from '../../data/errorHandling'
-import { getCachedActiveStrategy, getStrategies, updateStrategy as persistStrategy } from '../../data/strategyService'
+import { createStrategy as persistNewStrategy, deleteStrategy as removeStrategy, getCachedActiveStrategy, getStrategies, selectActiveStrategy, updateStrategy as persistStrategy } from '../../data/strategyService'
 import { useCurrentUser } from '../auth/UserContext'
 
 export const STRATEGY_DATA_EVENT = 'stravio:strategy-data'
@@ -60,10 +60,13 @@ export async function saveStrategyData(strategy: StrategyData) {
 }
 
 export function hasStrategyProgress(strategy: StrategyData) {
-  return strategy.workflowStep > 0
+  return (strategy.name.trim() !== '' && strategy.name !== 'Untitled Strategy')
+    || Boolean(strategy.description.trim())
+    || strategy.workflowStep > 0
     || strategy.completed
     || Object.values(strategy.currentState).some((value) => value.trim())
     || Object.values(strategy.desiredState).some((value) => value.trim())
+    || strategy.strategicOptions.some((option) => Object.values(option).some((value) => Array.isArray(value) ? value.some((item) => item.trim()) : typeof value === 'string' && value.trim()))
     || strategy.selectedOptionIds.length > 0
     || (['A', 'B'] as const).some((plan) => Object.values(strategy.plans[plan]).some((value) => value.trim()))
     || strategy.stages.some((stage) => Object.values(stage).some((value) => typeof value === 'string' && value.trim()))
@@ -74,6 +77,7 @@ export function hasStrategyProgress(strategy: StrategyData) {
 export function useStrategy() {
   const user = useCurrentUser()
   const [strategy, setStrategy] = useState<StrategyData>(() => loadStrategyData(user.id))
+  const [strategies, setStrategies] = useState<StrategyData[]>([])
   const [loading, setLoading] = useState(true)
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const [loadError, setLoadError] = useState('')
@@ -86,6 +90,7 @@ export function useStrategy() {
     getStrategies(user.id).then((strategies) => {
       if (!active) return
       const loaded = strategies[0] ?? createInitialStrategy(user.id)
+      setStrategies(strategies)
       lastSaved.current = JSON.stringify(loaded)
       setStrategy(loaded)
       setLoadError('')
@@ -101,7 +106,7 @@ export function useStrategy() {
   }, [user.id])
 
   useEffect(() => {
-    if (loading || !hasStrategyProgress(strategy)) return
+    if (loading || (!hasStrategyProgress(strategy) && !strategies.some((entry) => entry.id === strategy.id))) return
     const serialized = JSON.stringify(strategy)
     if (serialized === lastSaved.current) return
     let active = true
@@ -111,6 +116,7 @@ export function useStrategy() {
       void saveStrategyData(strategy).then((saved) => {
         if (!active) return
         lastSaved.current = JSON.stringify(saved)
+        setStrategies((current) => [saved, ...current.filter((entry) => entry.id !== saved.id)])
         setSaveState('saved')
         setError('')
       }).catch((saveError: unknown) => {
@@ -121,7 +127,7 @@ export function useStrategy() {
       })
     }, 500)
     return () => { active = false; window.clearTimeout(timer) }
-  }, [loading, strategy])
+  }, [loading, strategy, strategies])
 
   useEffect(() => {
     const syncStrategy = (event: Event) => {
@@ -146,5 +152,50 @@ export function useStrategy() {
     })
   }
 
-  return { strategy, updateStrategy, loading, loadError, saveState, error }
+  const chooseStrategy = (strategyId: string) => {
+    const selected = selectActiveStrategy(user.id, strategyId)
+    setStrategy(selected)
+    lastSaved.current = JSON.stringify(selected)
+    setSaveState('saved')
+    setError('')
+    window.dispatchEvent(new CustomEvent<StrategyData>(STRATEGY_DATA_EVENT, { detail: selected }))
+  }
+
+  const createNewStrategy = async () => {
+    setError('')
+    try {
+      const created = await persistNewStrategy(createInitialStrategy(user.id))
+      setStrategies((current) => [created, ...current.filter((entry) => entry.id !== created.id)])
+      setStrategy(created)
+      lastSaved.current = JSON.stringify(created)
+      setSaveState('saved')
+      window.dispatchEvent(new CustomEvent<StrategyData>(STRATEGY_DATA_EVENT, { detail: created }))
+      return true
+    } catch (createError) {
+      logClientError('create strategy', createError)
+      setError('Strategy was not created. Please check the connection and try again.')
+      return false
+    }
+  }
+
+  const deleteCurrentStrategy = async () => {
+    setError('')
+    try {
+      await removeStrategy(user.id, strategy.id)
+      const remaining = strategies.filter((entry) => entry.id !== strategy.id)
+      setStrategies(remaining)
+      const next = remaining[0] ?? createInitialStrategy(user.id)
+      setStrategy(next)
+      lastSaved.current = JSON.stringify(next)
+      setSaveState(remaining.length ? 'saved' : 'idle')
+      window.dispatchEvent(new CustomEvent<StrategyData>(STRATEGY_DATA_EVENT, { detail: next }))
+      return true
+    } catch (deleteError) {
+      logClientError('delete strategy', deleteError)
+      setError('Strategy was not deleted. Please check the connection and try again.')
+      return false
+    }
+  }
+
+  return { strategy, strategies, updateStrategy, chooseStrategy, createNewStrategy, deleteCurrentStrategy, loading, loadError, saveState, error }
 }

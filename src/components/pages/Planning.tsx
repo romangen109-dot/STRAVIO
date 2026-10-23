@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { ArrowRight, CalendarDays, Check, Clock3, ListChecks, Plus, Sparkles, Trash2, Pencil, X } from 'lucide-react'
-import { project } from '../../data/mockProject'
 import type { PlanningTask, PlanningTaskPriority, PlanningTaskStatus, StrategyData } from '../../types'
 import { usePlanningTasks } from '../planning/usePlanningTasks'
 import { hasStrategyProgress, useStrategy } from '../strategy/useStrategy'
@@ -22,8 +21,26 @@ type TaskDraft = {
 }
 
 const algorithmStages = ['Current State', 'Desired State', 'Strategic Options', 'Plan A / Plan B', 'Stage Plans', 'Control']
+type PlanningView = 'all' | 'today' | 'tomorrow' | 'week' | 'month'
 const statusLabels: Record<PlanningTaskStatus, string> = { todo: 'To Do', 'in-progress': 'In Progress', completed: 'Completed' }
 const priorityLabels: Record<PlanningTaskPriority, string> = { low: 'Low', medium: 'Medium', high: 'High' }
+
+function dateKey(date: Date) {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+function shiftDate(value: string, days: number) {
+  const date = new Date(`${value}T12:00:00`)
+  date.setDate(date.getDate() + days)
+  return dateKey(date)
+}
+
+function monthLabel(value: Date) {
+  return new Intl.DateTimeFormat('en', { month: 'long', year: 'numeric' }).format(value)
+}
 
 function buildStages(strategy: StrategyData): PlanningStage[] {
   const selectedOptions = strategy.strategicOptions.filter((option) => strategy.selectedOptionIds.includes(option.id)).map((option) => option.title)
@@ -46,6 +63,9 @@ export function Planning({ strategyOverride, onCreateStrategy, onAskAI }: Props)
   const strategy = strategyOverride ?? savedStrategy
   const [editingTask, setEditingTask] = useState<PlanningTask | null>(null)
   const [newTaskStage, setNewTaskStage] = useState<string | null>(null)
+  const [planningView, setPlanningView] = useState<PlanningView>('all')
+  const [monthCursor, setMonthCursor] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1))
+  const [selectedCalendarDate, setSelectedCalendarDate] = useState<string | null>(null)
   const strategyStarted = hasStrategyProgress(strategy)
   const stages = buildStages(strategy)
   const strategyTasks = tasks.filter((task) => task.strategyId === strategy.id)
@@ -55,9 +75,28 @@ export function Planning({ strategyOverride, onCreateStrategy, onAskAI }: Props)
   const nextDeadline = strategyTasks.filter((task) => task.status !== 'completed' && task.deadline).sort((left, right) => left.deadline.localeCompare(right.deadline))[0]?.deadline
   const currentAlgorithmStage = strategy.completed ? 'Completed' : algorithmStages[Math.min(strategy.workflowStep, algorithmStages.length - 1)]
   const strategyTitle = strategy.desiredState.destination.trim()
-    || (strategy.name !== project.name ? strategy.name.trim() : '')
+    || strategy.name.trim()
     || 'Untitled Strategy'
   const pendingStagePlans = strategy.stages.filter((stage) => stage.title.trim() && !strategyTasks.some((task) => task.sourceStagePlanId === stage.id))
+  const today = dateKey(new Date())
+  const weekStartDate = new Date(`${today}T12:00:00`)
+  weekStartDate.setDate(weekStartDate.getDate() - ((weekStartDate.getDay() + 6) % 7))
+  const weekStart = dateKey(weekStartDate)
+  const weekEnd = shiftDate(weekStart, 6)
+  const monthKey = `${monthCursor.getFullYear()}-${String(monthCursor.getMonth() + 1).padStart(2, '0')}`
+  const monthDays = new Date(monthCursor.getFullYear(), monthCursor.getMonth() + 1, 0).getDate()
+  const monthOffset = (new Date(monthCursor.getFullYear(), monthCursor.getMonth(), 1).getDay() + 6) % 7
+  const monthCalendarDays = Array.from({ length: monthOffset + monthDays }, (_, index) => index < monthOffset ? null : index - monthOffset + 1)
+  const taskCountForDate = (date: string) => strategyTasks.filter((task) => task.deadline === date).length
+  const matchesPlanningView = (task: PlanningTask) => {
+    if (planningView === 'all') return true
+    if (!task.deadline) return false
+    if (planningView === 'today') return task.deadline === today
+    if (planningView === 'tomorrow') return task.deadline === shiftDate(today, 1)
+    if (planningView === 'week') return task.deadline >= weekStart && task.deadline <= weekEnd
+    return selectedCalendarDate ? task.deadline === selectedCalendarDate : task.deadline.startsWith(monthKey)
+  }
+  const visibleTaskCount = strategyTasks.filter(matchesPlanningView).length
 
   const openCreate = (stageId = stages[0].id) => setNewTaskStage(stageId)
   const saveTask = async (draft: TaskDraft) => {
@@ -94,12 +133,33 @@ export function Planning({ strategyOverride, onCreateStrategy, onAskAI }: Props)
         </div>
       </section>
 
+      <section className="planning-calendar-panel workspace-panel">
+        <div className="planning-view-toolbar" role="group" aria-label="Planning views">
+          {([['all', 'All tasks'], ['today', 'Today'], ['tomorrow', 'Tomorrow'], ['week', 'Week'], ['month', 'Month']] as const).map(([view, label]) => <button key={view} aria-pressed={planningView === view} className={`planning-view-button ${planningView === view ? 'is-active' : ''}`} onClick={() => { setPlanningView(view); setSelectedCalendarDate(null) }}>{label}</button>)}
+        </div>
+        {planningView === 'month' && <div className="planning-month-calendar">
+          <div className="planning-month-heading"><button className="outline-button" onClick={() => { setMonthCursor((current) => new Date(current.getFullYear(), current.getMonth() - 1, 1)); setSelectedCalendarDate(null) }} aria-label="Previous month">‹</button><strong>{monthLabel(monthCursor)}</strong><button className="outline-button" onClick={() => { setMonthCursor((current) => new Date(current.getFullYear(), current.getMonth() + 1, 1)); setSelectedCalendarDate(null) }} aria-label="Next month">›</button></div>
+          <div className="planning-month-grid">
+            {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day) => <span className="planning-month-weekday" key={day}>{day}</span>)}
+            {monthCalendarDays.map((day, index) => {
+              const dayKey = day ? `${monthKey}-${String(day).padStart(2, '0')}` : ''
+              const count = dayKey ? taskCountForDate(dayKey) : 0
+              return day ? <button key={dayKey} className={`planning-month-day ${selectedCalendarDate === dayKey ? 'is-selected' : ''} ${dayKey === today ? 'is-today' : ''}`} onClick={() => setSelectedCalendarDate((current) => current === dayKey ? null : dayKey)} aria-pressed={selectedCalendarDate === dayKey} aria-label={`${monthLabel(monthCursor)} ${day}, ${count} tasks`}>
+                <span>{day}</span>{count > 0 && <small>{count} {count === 1 ? 'task' : 'tasks'}</small>}
+              </button> : <span className="planning-month-day is-empty" key={`empty-${index}`} aria-hidden="true" />
+            })}
+          </div>
+          {selectedCalendarDate && <p className="planning-calendar-selection">Showing tasks for {formatDate(selectedCalendarDate)}. Select the date again to show the full month.</p>}
+        </div>}
+        {planningView !== 'all' && visibleTaskCount === 0 && <div className="planning-calendar-empty">{planningView === 'month' && !selectedCalendarDate ? 'No tasks are scheduled this month.' : 'No tasks are scheduled for this period.'}</div>}
+      </section>
+
       {pendingStagePlans.length > 0 && <button className="planning-suggestions" onClick={() => void createFromStagePlans(strategy.id, strategy.stages)} disabled={saving}><span><Sparkles size={14} /></span><span><strong>Tasks from Stage Plans</strong><small>{pendingStagePlans.length} untracked stage {pendingStagePlans.length === 1 ? 'plan' : 'plans'} · titles and details are taken from your strategy</small></span><span className="planning-suggestion-action">Add {pendingStagePlans.length} tasks <ArrowRight size={13} /></span></button>}
 
       {strategyTasks.length === 0 && <section className="planning-empty-task workspace-panel"><div><h2>Your plan is ready to be executed.</h2><p>Add the first action to begin tracking execution across your strategy stages.</p></div><button className="outline-button algorithm-primary" onClick={() => openCreate()} disabled={saving}><Plus size={14} /> Add your first task</button></section>}
 
       <div className="planning-stage-list">{stages.map((stage, index) => {
-        const stageTasks = strategyTasks.filter((task) => task.stageId === stage.id)
+        const stageTasks = strategyTasks.filter((task) => task.stageId === stage.id && matchesPlanningView(task))
         const stageCompleted = stageTasks.filter((task) => task.status === 'completed').length
         const stageStatus = stageTasks.length > 0 && stageCompleted === stageTasks.length ? 'completed' : stageTasks.length > 0 ? 'in-progress' : 'todo'
         const isCurrent = !strategy.completed && index === strategy.workflowStep
@@ -113,7 +173,7 @@ export function Planning({ strategyOverride, onCreateStrategy, onAskAI }: Props)
 
           {stage.id === 'stage-plans' && strategy.stages.length > 0 && <div className="planning-stage-plan-list">{strategy.stages.map((plan, planIndex) => <div className="planning-substage" key={plan.id}><span>{String(planIndex + 1).padStart(2, '0')}</span><strong>{plan.title.trim() || `Stage Plan ${planIndex + 1}`}</strong><small>{plan.objective.trim() || plan.expectedResult.trim()}</small></div>)}</div>}
 
-          <div className="planning-task-list">{stageTasks.length ? stageTasks.map((task) => <TaskRow key={task.id} task={task} disabled={saving} onStatusChange={(status) => { void updateTask(task.id, { status }) }} onEdit={() => setEditingTask(task)} onDelete={() => { void deleteTask(task.id) }} />) : <div className="planning-stage-empty"><span>No actions assigned to this stage.</span><button onClick={() => openCreate(stage.id)} disabled={saving}>Add task <Plus size={12} /></button></div>}</div>
+          <div className="planning-task-list">{stageTasks.length ? stageTasks.map((task) => <TaskRow key={task.id} task={task} disabled={saving} onStatusChange={(status) => { void updateTask(task.id, { status }) }} onEdit={() => setEditingTask(task)} onDelete={() => { if (window.confirm(`Delete “${task.title}”? This action cannot be undone.`)) void deleteTask(task.id) }} />) : <div className="planning-stage-empty"><span>No actions assigned to this stage.</span><button onClick={() => openCreate(stage.id)} disabled={saving}>Add task <Plus size={12} /></button></div>}</div>
         </section>
       })}</div>
     </>}

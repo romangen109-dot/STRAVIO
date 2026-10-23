@@ -6,8 +6,10 @@ import { usePlanningTasks } from '../planning/usePlanningTasks'
 type Props = {
   documents: StrategyDocument[]
   selectedDocumentId?: string
+  onCreate: () => void
   onOpen: (document: StrategyDocument) => void
   onSave: (id: string, content: string) => Promise<boolean>
+  onRename: (id: string, title: string) => Promise<boolean>
   onDelete: (id: string) => Promise<boolean>
   onDuplicate: (document: StrategyDocument) => Promise<boolean>
   onBack: () => void
@@ -17,22 +19,27 @@ type Props = {
 
 const dateFormatter = new Intl.DateTimeFormat('en', { year: 'numeric', month: 'short', day: 'numeric' })
 
-export function StrategyDocuments({ documents, selectedDocumentId, onOpen, onSave, onDelete, onDuplicate, onBack, onOpenPlanning, onAskAI }: Props) {
+export function StrategyDocuments({ documents, selectedDocumentId, onCreate, onOpen, onSave, onRename, onDelete, onDuplicate, onBack, onOpenPlanning, onAskAI }: Props) {
   const { tasks } = usePlanningTasks()
   const selected = documents.find((document) => document.id === selectedDocumentId)
   const documentTasks = selected ? tasks.filter((task) => task.strategyId === selected.strategy.id) : []
   const executionCounts = countExecutionTasks(documentTasks)
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState('')
+  const [titleDraft, setTitleDraft] = useState('')
   const [saving, setSaving] = useState(false)
+  const [renaming, setRenaming] = useState(false)
   const [saveError, setSaveError] = useState('')
+  const [renameError, setRenameError] = useState('')
   const [actionId, setActionId] = useState('')
   const [actionError, setActionError] = useState('')
 
   useEffect(() => {
     setEditing(false)
     setDraft('')
-  }, [selectedDocumentId])
+    setTitleDraft(selected?.title ?? '')
+    setRenameError('')
+  }, [selectedDocumentId, selected?.title])
 
   const duplicate = async (document: StrategyDocument) => {
     if (actionId) return
@@ -49,6 +56,8 @@ export function StrategyDocuments({ documents, selectedDocumentId, onOpen, onSav
 
   const remove = async (id: string) => {
     if (actionId) return
+    const document = documents.find((item) => item.id === id)
+    if (!window.confirm(`Delete “${document?.title ?? 'this document'}”? This action cannot be undone.`)) return
     setActionId(id)
     setActionError('')
     try {
@@ -61,8 +70,8 @@ export function StrategyDocuments({ documents, selectedDocumentId, onOpen, onSav
   }
 
   if (!selected) return <div className="secondary-page strategy-documents-page">
-    <div className="page-crumb"><span>PROJECT</span><span>›</span><span>STRATEGY DOCUMENTS</span></div>
-    <div className="secondary-heading"><div><span className="eyebrow">STRATEGY LIBRARY <i /> {String(documents.length).padStart(2, '0')} DOCUMENTS</span><h1>Strategy Documents</h1><p>Сохранённые снимки стратегий, сформированные из ответов Strategy Algorithm.</p></div></div>
+    <div className="page-crumb"><span>WORKSPACE</span><span>›</span><span>DOCUMENTS</span></div>
+    <div className="secondary-heading"><div><span className="eyebrow">DOCUMENT LIBRARY <i /> {String(documents.length).padStart(2, '0')} DOCUMENTS</span><h1>Documents</h1><p>Write strategy briefs, working papers and plans linked to your strategy.</p></div><button className="outline-button algorithm-primary" onClick={onCreate}>Create document</button></div>
     {documents.length ? <div className="strategy-document-list">{documents.map((document) => <article className="strategy-document-row" key={document.id}>
       <span className="strategy-document-icon"><FileText size={17} /></span>
       <div className="strategy-document-summary"><strong>{document.title}</strong><span>Created {dateFormatter.format(new Date(document.createdAt))}</span></div>
@@ -70,7 +79,7 @@ export function StrategyDocuments({ documents, selectedDocumentId, onOpen, onSav
       <button className="outline-button strategy-document-open" onClick={() => onOpen(document)}>Open</button>
       <button className="icon-button strategy-document-action" onClick={() => void duplicate(document)} aria-label={`Duplicate ${document.title}`} title="Duplicate" disabled={Boolean(actionId)}><Copy size={14} /></button>
       <button className="icon-button strategy-document-action delete" onClick={() => void remove(document.id)} aria-label={actionId === document.id ? `Deleting ${document.title}` : `Delete ${document.title}`} title={actionId === document.id ? 'Deleting…' : 'Delete'} disabled={Boolean(actionId)}><Trash2 size={14} /></button>
-    </article>)}</div> : <div className="strategy-documents-empty workspace-panel"><span className="strategy-document-icon"><FileText size={18} /></span><h2>Пока нет стратегических документов</h2><p>После завершения Strategy Algorithm выберите Generate Strategy Document. Документ будет создан из сохранённых ответов.</p></div>}
+    </article>)}</div> : <div className="strategy-documents-empty workspace-panel"><span className="strategy-document-icon"><FileText size={18} /></span><h2>No documents yet</h2><p>Create a working document or generate a strategy brief from your saved answers.</p><button className="outline-button algorithm-primary" onClick={onCreate}>Create your first document</button></div>}
     {actionError && <div className="auth-error" role="alert">{actionError}</div>}
   </div>
 
@@ -88,10 +97,23 @@ export function StrategyDocuments({ documents, selectedDocumentId, onOpen, onSav
     else setSaveError('Document was not saved. Your draft is still available here.')
   }
 
+  const rename = async () => {
+    if (!selected || !titleDraft.trim() || titleDraft.trim() === selected.title || renaming) return
+    setRenaming(true)
+    setRenameError('')
+    try {
+      if (!await onRename(selected.id, titleDraft.trim())) setRenameError('Document title was not saved. Please try again.')
+    } catch {
+      setRenameError('Document title was not saved. Please try again.')
+    } finally {
+      setRenaming(false)
+    }
+  }
+
   return <div className="secondary-page strategy-document-editor-page">
     <div className="page-crumb"><span>PROJECT</span><span>›</span><button onClick={onBack}>STRATEGY DOCUMENTS</button><span>›</span><span>DOCUMENT</span></div>
-    {(saveError || actionError) && <div className="auth-error" role="alert">{saveError || actionError}</div>}
-    <div className="strategy-document-toolbar"><div className="document-toolbar-title"><span className="strategy-document-icon"><FileText size={16} /></span><div><strong>{selected.title}</strong><small>{saving ? 'Saving to cloud…' : editing ? 'Unsaved changes' : `Last saved ${dateFormatter.format(new Date(selected.updatedAt))}`}</small></div></div><div className="document-toolbar-actions">
+    {(saveError || renameError || actionError) && <div className="auth-error" role="alert">{saveError || renameError || actionError}</div>}
+    <div className="strategy-document-toolbar"><div className="document-toolbar-title"><span className="strategy-document-icon"><FileText size={16} /></span><div><input className="document-title-input" aria-label="Document title" maxLength={200} value={titleDraft} onChange={(event) => setTitleDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void rename() }} /><small>{saving ? 'Saving to cloud…' : editing ? 'Unsaved changes' : `Last saved ${dateFormatter.format(new Date(selected.updatedAt))}`}</small></div><button className="outline-button" onClick={() => void rename()} disabled={renaming || !titleDraft.trim() || titleDraft.trim() === selected.title}>{renaming ? 'Renaming…' : 'Save title'}</button></div><div className="document-toolbar-actions">
       <button className="outline-button" onClick={() => onOpenPlanning(selected.strategy)}>Open Planning</button>
       <button className="outline-button" onClick={() => onAskAI('Analyze this strategy document for gaps and risks.', { id: selected.id, title: selected.title, content: editing ? draft : selected.content })}>Analyze this strategy</button>
       <button className="outline-button" onClick={() => void duplicate(selected)} disabled={Boolean(actionId) || saving}><Copy size={13} /> {actionId === selected.id ? 'Duplicating…' : 'Duplicate'}</button>

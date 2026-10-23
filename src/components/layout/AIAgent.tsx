@@ -108,7 +108,7 @@ export function AIAgent({ onClose, getContext, initialPrompt, onPromptHandled, o
         logClientError('reload AI conversation after failed request', historyError)
         setChats((current) => ({ ...current, [requestStrategyId]: (current[requestStrategyId] ?? []).filter((message) => message.id !== pendingUserMessage.id) }))
       }
-      setProviderError('AI request failed. Your data was not changed. Please try again.')
+      setProviderError(requestError instanceof Error ? requestError.message : 'The AI response could not be received. Strategy and task data were not changed.')
       setJob((current) => current?.id === currentJobId ? null : current)
     }
   }
@@ -184,7 +184,7 @@ export function AIAgent({ onClose, getContext, initialPrompt, onPromptHandled, o
     <div className="agent-context"><span className="context-signal" /><span>STRATEGY CONTEXT</span><span className="context-divider" /><FileText size={12} /><span>{contextLabel}</span><ChevronDown size={12} /></div>
     <div className="agent-scroll-area">
       <div className="agent-intro"><div className="agent-orb"><Sparkles size={17} /></div><span className="eyebrow">STRAVIO INTELLIGENCE <i /> SERVER-SIDE</span><h2>Strategy-aware assistance.</h2><p>Контекст загружается сервером из вашей стратегии, документов и Planning. Предложения не применяются без подтверждения.</p><div className="agent-model-note"><Cpu size={12} /> SECURE SERVER AI PROVIDER</div></div>
-      {aiConnected === false ? <div className="agent-connection-note"><span>i</span><div><strong>AI Agent is not connected yet.</strong><small>Настройте AI_API_KEY в secrets Supabase Edge Function. Изменения стратегии и задач требуют подтверждения.</small></div></div> : aiConnected === null ? <div className="agent-connection-note"><span>i</span><div><strong>Secure server AI provider</strong><small>Доступность провайдера проверяется при первом запросе.</small></div></div> : null}
+      {aiConnected === null && <div className="agent-connection-note"><span>i</span><div><strong>Secure server AI provider</strong><small>Доступность провайдера проверяется при первом запросе.</small></div></div>}
 
       <div className="agent-actions-block"><div className="agent-section-label"><span>STRATEGY ACTIONS</span><span>06</span></div><div className="agent-action-list">{agentActions.map((action, index) => <button className="agent-action" key={action.id} onClick={() => sendPrompt(action.prompt)} disabled={historyLoading || job?.status === 'thinking' || job?.status === 'analyzing'}><span className="agent-action-number">0{index + 1}</span><span>{action.label}</span><ArrowRight size={13} /></button>)}</div></div>
 

@@ -1,5 +1,4 @@
 import type { CurrentStateAnswers, DesiredStateAnswers, StrategyData } from '../types'
-import { project } from './mockProject'
 
 export type InterviewQuestion<T extends string> = {
   key: T
@@ -30,33 +29,11 @@ export function createInitialStrategy(userId = ''): StrategyData {
   return {
     userId,
     id: globalThis.crypto?.randomUUID?.() ?? `strategy-${userId}-${Date.now()}`,
-    name: project.name,
-    description: project.description,
+    name: 'Untitled Strategy',
+    description: '',
     currentState: { situation: '', resources: '', skills: '', constraints: '', problems: '', opportunities: '' },
     desiredState: { destination: '', successPicture: '', indicators: '', timeframe: '', changes: '' },
-    strategicOptions: [
-      {
-        id: 'A', title: 'Option A · Нишевый MVP',
-        description: 'Запустить один короткий практический курс для конкретного сегмента и быстро проверить спрос.',
-        advantages: ['Быстрая проверка спроса', 'Низкие затраты на первый запуск'],
-        risks: ['Узкий первоначальный рынок', 'Результат зависит от качества выбранного сегмента'],
-        requiredResources: ['Команда продукта', 'Один автор курса', 'Лендинг и инструменты интервью'],
-      },
-      {
-        id: 'B', title: 'Option B · Когортное обучение',
-        description: 'Провести обучение небольшими потоками с поддержкой наставников и обратной связью.',
-        advantages: ['Высокая вовлечённость', 'Ранняя выручка и качественная обратная связь'],
-        risks: ['Зависимость от доступности наставников', 'Ограниченная пропускная способность'],
-        requiredResources: ['Наставники', 'Учебная программа', 'Платформа для групповых занятий'],
-      },
-      {
-        id: 'C', title: 'Option C · Контентная платформа',
-        description: 'Создать библиотеку самостоятельных курсов, постепенно расширяя каталог и охват.',
-        advantages: ['Потенциал масштабирования', 'Контент может поддерживать органический охват'],
-        risks: ['Долгий путь к монетизации', 'Риск создать контент без подтверждённого спроса'],
-        requiredResources: ['Производство контента', 'Техническая платформа', 'Маркетинг и аналитика'],
-      },
-    ],
+    strategicOptions: [],
     selectedOptionIds: [],
     plans: {
       A: { objective: '', approach: '', keyActions: '', risks: '', resources: '' },

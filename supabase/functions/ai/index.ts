@@ -9,7 +9,7 @@ const corsHeaders = {
   Vary: 'Origin',
 }
 
-type RequestBody = { action?: 'respond' | 'apply' | 'cancel'; strategyId?: string; prompt?: string; currentDocumentId?: string; currentDocumentContent?: string; messageId?: string }
+type RequestBody = { action?: 'respond' | 'apply' | 'cancel'; strategyId?: string; prompt?: string; activeView?: string; currentDocumentId?: string; currentDocumentContent?: string; messageId?: string }
 
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
@@ -113,6 +113,8 @@ Deno.serve(async (request) => {
   if (body.action !== 'respond' || typeof body.strategyId !== 'string' || typeof body.prompt !== 'string' || !body.prompt.trim() || body.prompt.length > 6000) {
     return jsonResponse({ error: 'A strategy and prompt of up to 6000 characters are required.' }, 400)
   }
+  const apiKey = Deno.env.get('AI_API_KEY')
+  if (!apiKey) return jsonResponse({ error: 'AI provider is not configured. Set AI_API_KEY in Supabase Edge Function secrets.' }, 503)
 
   const { data: withinRateLimit, error: rateLimitError } = await supabase.rpc('consume_ai_request', { p_max_requests: 12 })
   if (rateLimitError) {
@@ -149,6 +151,7 @@ Deno.serve(async (request) => {
   const plans = isRecord(strategyData.plans) ? strategyData.plans : {}
   const control = isRecord(strategyData.control) ? strategyData.control : {}
   const context = {
+    activeView: text(body.activeView, 100),
     strategy: {
       name: text(strategy.name, 200),
       workflowStep: strategy.workflow_step,
@@ -181,14 +184,6 @@ Deno.serve(async (request) => {
   if (saveUserError) {
     logFailure('user message insert failed', saveUserError)
     return jsonResponse({ error: 'Could not save your message. Please try again.' }, 500)
-  }
-
-  const apiKey = Deno.env.get('AI_API_KEY')
-  if (!apiKey) {
-    const assistantMessage = { id: crypto.randomUUID(), user_id: userId, strategy_id: body.strategyId, role: 'agent', content: 'AI Agent is not connected yet.', proposal: null }
-    const { error } = await supabase.from('ai_messages').insert(assistantMessage)
-    if (error) return jsonResponse({ error: 'AI Agent is not connected yet.' }, 503)
-    return jsonResponse({ connected: false, userMessage: { ...userMessage, userId, createdAt: new Date().toISOString() }, message: { ...assistantMessage, userId, createdAt: new Date().toISOString() } })
   }
 
   const priorMessages = (historyResult.data ?? []).slice(0, 8).reverse().map((message) => ({ role: message.role === 'agent' ? 'assistant' : 'user', content: text(message.content, 750) }))

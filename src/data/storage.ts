@@ -1,6 +1,6 @@
 import type { User } from '../types'
 
-export type UserDataCollection = 'strategy' | 'documents' | 'tasks' | 'ai-history' | 'activity' | 'files' | 'migration'
+export type UserDataCollection = 'strategy' | 'documents' | 'tasks' | 'ai-history' | 'activity' | 'files' | 'active-strategy' | 'migration'
 export const USER_DATA_CLEARED_EVENT = 'stravio:user-data-cleared'
 
 export interface DataProvider {

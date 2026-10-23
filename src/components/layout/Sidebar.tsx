@@ -1,38 +1,35 @@
 import { useState } from 'react'
-import { Activity, BookOpen, CalendarDays, ChevronDown, Compass, FileText, FolderTree, LayoutDashboard, PanelLeftClose, Settings2 } from 'lucide-react'
-import { navigation, project as mockProject } from '../../data/mockProject'
-import type { ProjectFile, WorkspaceSection } from '../../types'
-import { ProjectTree } from '../project/ProjectTree'
+import { CalendarDays, ChevronDown, Compass, FileText, LayoutDashboard, PanelLeftClose, Settings2 } from 'lucide-react'
+import { navigation } from '../../data/navigation'
+import type { WorkspaceSection } from '../../types'
+import { useCurrentUser } from '../auth/UserContext'
 
 const icons = { layout: LayoutDashboard, compass: Compass, strategyDocuments: FileText, calendar: CalendarDays, settings: Settings2 }
 
 type Props = {
   activeSection: WorkspaceSection
   onNavigate: (section: WorkspaceSection) => void
-  files: ProjectFile[]
-  activeFile?: string
-  onOpenFile: (file: ProjectFile) => void
-  onCreateFile: (folder: string, name: string) => void
   onCollapse: () => void
 }
 
-export function Sidebar({ activeSection, onNavigate, files, activeFile, onOpenFile, onCreateFile, onCollapse }: Props) {
+export function Sidebar({ activeSection, onNavigate, onCollapse }: Props) {
+  const user = useCurrentUser()
   const [workspaceOpen, setWorkspaceOpen] = useState(true)
   return (
     <aside className="sidebar">
       <div className="sidebar-heading"><span>WORKSPACE</span><button className="icon-button sidebar-collapse" onClick={onCollapse} title="Свернуть панель" aria-label="Свернуть панель"><PanelLeftClose size={15} /></button></div>
       <button className="workspace-project" onClick={() => setWorkspaceOpen(!workspaceOpen)} aria-expanded={workspaceOpen}>
-        <span className="project-avatar"><Activity size={17} /></span>
-        <span className="workspace-project-copy"><strong>{mockProject.name}</strong><small>Личный workspace</small></span>
+        <span className="project-avatar">{user.name.trim().charAt(0).toUpperCase() || 'S'}</span>
+        <span className="workspace-project-copy"><strong>{user.name || 'Your workspace'}</strong><small>Personal workspace</small></span>
         <ChevronDown className={workspaceOpen ? '' : 'rotate-chevron'} size={14} />
       </button>
       {workspaceOpen && <>
         <div className="project-summary">
-          <p>{mockProject.description}</p>
-          <span className="status-pill"><i /> {mockProject.status}</span>
+          <p>{user.email}</p>
+          <span className="status-pill"><i /> Supabase account</span>
         </div>
-        <div className="sidebar-nav-label">PROJECT</div>
-        <nav className="workspace-nav" aria-label="Навигация по проекту">
+        <div className="sidebar-nav-label">WORKSPACE</div>
+        <nav className="workspace-nav" aria-label="Workspace navigation">
           {navigation.map((item) => {
             const Icon = icons[item.icon as keyof typeof icons]
             return <button className={`nav-item ${activeSection === item.label ? 'is-active' : ''}`} key={item.label} onClick={() => onNavigate(item.label)}>
@@ -41,12 +38,7 @@ export function Sidebar({ activeSection, onNavigate, files, activeFile, onOpenFi
           })}
         </nav>
       </>}
-      <div className="files-heading"><span>PROJECT FILES</span><FolderTree size={14} /></div>
-      <ProjectTree files={files} activeFile={activeFile} onOpenFile={onOpenFile} onCreateFile={onCreateFile} />
-      <div className="sidebar-bottom">
-        <div className="storage-row"><BookOpen size={13} /><span>Project files</span><strong>{files.length}</strong></div>
-        <span className="storage-caption">Stored in this browser</span>
-      </div>
+      <div className="sidebar-bottom"><span className="storage-caption">Private workspace</span></div>
     </aside>
   )
 }

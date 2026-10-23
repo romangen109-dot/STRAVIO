@@ -1,4 +1,5 @@
 import type { AgentContext, AgentMessage, AgentProposal } from '../types'
+import { FunctionsHttpError } from '@supabase/supabase-js'
 import { requireSupabase } from './supabaseClient'
 import { logClientError } from './errorHandling'
 
@@ -38,13 +39,29 @@ export async function requestAgentResponse(context: AgentContext, prompt: string
       action: 'respond',
       strategyId: context.strategy.id,
       prompt,
+      activeView: context.activeView,
       currentDocumentId: hasOpenedStrategyDocument ? context.currentDocument?.id : undefined,
       currentDocumentContent: hasOpenedStrategyDocument ? context.currentDocument?.content : undefined,
     },
   })
-  if (error) { logClientError('request AI response', error); throw new Error('AI request failed. Please try again.') }
+  if (error) {
+    logClientError('request AI response', error)
+    if (error instanceof FunctionsHttpError) {
+      let responseBody: unknown
+      try {
+        responseBody = await error.context.clone().json()
+      } catch (responseError) {
+        logClientError('read AI error response', responseError)
+        throw new Error('AI service returned an unreadable error response.')
+      }
+      if (typeof responseBody === 'object' && responseBody !== null && 'error' in responseBody && typeof responseBody.error === 'string') {
+        throw new Error(responseBody.error)
+      }
+    }
+    throw new Error('AI request failed. Please try again.')
+  }
   if (!data || typeof data !== 'object' || !('message' in data) || !('userMessage' in data)) throw new Error('AI endpoint returned an invalid response.')
-  return { userMessage: fromResponse(data.userMessage), message: fromResponse(data.message), connected: data.connected !== false }
+  return { userMessage: fromResponse(data.userMessage), message: fromResponse(data.message), connected: true }
 }
 
 export async function resolveAgentProposal(strategyId: string, messageId: string, action: 'apply' | 'cancel') {

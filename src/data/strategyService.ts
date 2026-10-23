@@ -1,5 +1,6 @@
 import type { StrategyData } from '../types'
 import { createInitialStrategy } from './strategyAlgorithm'
+import { localStorageDataProvider } from './storage'
 import { requireSupabase } from './supabaseClient'
 
 type StrategyRow = {
@@ -15,6 +16,12 @@ type StrategyRow = {
 }
 
 const strategyCache = new Map<string, StrategyData[]>()
+
+function orderActiveStrategy(userId: string, strategies: StrategyData[]) {
+  const selectedId = localStorageDataProvider.get<string>(userId, 'active-strategy')
+  const selected = strategies.find((strategy) => strategy.id === selectedId) ?? strategies[0]
+  return selected ? [selected, ...strategies.filter((strategy) => strategy.id !== selected.id)] : strategies
+}
 
 function fromRow(row: StrategyRow): StrategyData {
   return { ...row.data, id: row.id, userId: row.user_id, name: row.name, description: row.description, workflowStep: row.workflow_step, completed: row.completed, createdAt: row.created_at, updatedAt: row.updated_at }
@@ -37,7 +44,7 @@ function toRow(strategy: StrategyData) {
 export async function getStrategies(userId: string) {
   const { data, error } = await requireSupabase().from('strategies').select('id,user_id,name,description,data,workflow_step,completed,created_at,updated_at').eq('user_id', userId).order('updated_at', { ascending: false })
   if (error) throw error
-  const strategies = (data as StrategyRow[]).map(fromRow)
+  const strategies = orderActiveStrategy(userId, (data as StrategyRow[]).map(fromRow))
   strategyCache.set(userId, strategies)
   return strategies
 }
@@ -58,6 +65,7 @@ export async function createStrategy(strategy: StrategyData) {
   const created = fromRow(data as StrategyRow)
   const cached = strategyCache.get(strategy.userId) ?? []
   strategyCache.set(strategy.userId, [created, ...cached])
+  localStorageDataProvider.set(strategy.userId, 'active-strategy', created.id)
   return created
 }
 
@@ -73,11 +81,25 @@ export async function updateStrategy(strategy: StrategyData) {
 export async function deleteStrategy(userId: string, strategyId: string) {
   const { error } = await requireSupabase().from('strategies').delete().eq('user_id', userId).eq('id', strategyId)
   if (error) throw error
-  strategyCache.set(userId, (strategyCache.get(userId) ?? []).filter((strategy) => strategy.id !== strategyId))
+  const remaining = (strategyCache.get(userId) ?? []).filter((strategy) => strategy.id !== strategyId)
+  strategyCache.set(userId, remaining)
+  if (localStorageDataProvider.get<string>(userId, 'active-strategy') === strategyId) {
+    if (remaining[0]) localStorageDataProvider.set(userId, 'active-strategy', remaining[0].id)
+    else localStorageDataProvider.set(userId, 'active-strategy', '')
+  }
 }
 
 export function getCachedActiveStrategy(userId: string) {
   return strategyCache.get(userId)?.[0] ?? createInitialStrategy(userId)
+}
+
+export function selectActiveStrategy(userId: string, strategyId: string) {
+  const strategies = strategyCache.get(userId) ?? []
+  const selected = strategies.find((strategy) => strategy.id === strategyId)
+  if (!selected) throw new Error('The selected strategy is not available in this workspace.')
+  localStorageDataProvider.set(userId, 'active-strategy', selected.id)
+  strategyCache.set(userId, [selected, ...strategies.filter((strategy) => strategy.id !== selected.id)])
+  return selected
 }
 
 export function setCachedStrategies(userId: string, strategies: StrategyData[]) {

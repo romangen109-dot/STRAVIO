@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react'
 import { ArrowRight, Check, Circle, Clock3, FileText, ListChecks, Plus, Sparkles } from 'lucide-react'
-import { project } from '../../data/mockProject'
 import type { PlanningTask, StrategyActivity, StrategyData, StrategyDocument } from '../../types'
 import { usePlanningTasks } from '../planning/usePlanningTasks'
 import { hasStrategyProgress, useStrategy } from '../strategy/useStrategy'
@@ -30,19 +29,20 @@ type Props = {
 }
 
 export function Dashboard({ documents, activity, migrationNotice, onOpenStrategy, onOpenDocuments, onOpenDocument, onOpenAgent, onOpenPlanning }: Props) {
-  const { strategy, updateStrategy, loading: strategyLoading, loadError: strategyLoadError } = useStrategy()
+  const { strategy, strategies, chooseStrategy, updateStrategy, loading: strategyLoading, loadError: strategyLoadError } = useStrategy()
   const { tasks, loading: tasksLoading, loadError: tasksLoadError } = usePlanningTasks()
   const [pendingStep, setPendingStep] = useState<number | null>(null)
-  const started = hasStrategyProgress(strategy)
+  const started = hasStrategyProgress(strategy) || strategies.some((entry) => entry.id === strategy.id)
   const currentStage = strategy.completed ? 'Completed' : stages[Math.min(strategy.workflowStep, stages.length - 1)]
   const strategyTitle = strategy.desiredState.destination.trim()
-    || (strategy.name !== project.name ? strategy.name.trim() : '')
+    || strategy.name.trim()
     || 'Untitled Strategy'
   const strategyDescription = strategy.desiredState.successPicture.trim()
     || strategy.desiredState.destination.trim()
     || strategy.currentState.situation.trim()
     || 'Strategy in progress'
   const recentDocuments = [...documents].sort((left, right) => right.createdAt.localeCompare(left.createdAt)).slice(0, 5)
+  const recentStrategies = [...strategies].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt)).slice(0, 5)
   const strategyDocument = [...documents].sort((left, right) => right.createdAt.localeCompare(left.createdAt)).find((document) => document.strategy.id === strategy.id)
   const strategyTasks = started ? tasks.filter((task) => task.strategyId === strategy.id) : []
   const openTasks = strategyTasks.filter((task) => task.status !== 'completed')
@@ -96,6 +96,20 @@ export function Dashboard({ documents, activity, migrationNotice, onOpenStrategy
           <span>{stage}</span>
           {current && <small>IN PROGRESS</small>}
           {complete && <small>COMPLETE</small>}
+        </button>
+      })}</div>
+    </section>}
+
+    {recentStrategies.length > 0 && <section className="dashboard-panel workspace-panel dashboard-strategy-library">
+      <div className="dashboard-section-heading"><div><span className="eyebrow">STRATEGY LIBRARY</span><h2>Your strategies</h2></div><button className="subtle-link" onClick={onOpenStrategy}>Manage <ArrowRight size={13} /></button></div>
+      <div className="dashboard-strategy-list">{recentStrategies.map((entry) => {
+        const isActive = entry.id === strategy.id
+        const title = entry.desiredState.destination.trim() || entry.name || 'Untitled Strategy'
+        return <button className={`dashboard-strategy-row ${isActive ? 'is-active' : ''}`} key={entry.id} onClick={() => { chooseStrategy(entry.id); onOpenStrategy() }}>
+          <span className="dashboard-live-dot" />
+          <span><strong>{title}</strong><small>{entry.completed ? 'Completed' : `Step ${entry.workflowStep + 1} of ${stages.length}`} · Updated {formatDate(entry.updatedAt)}</small></span>
+          {isActive && <small className="dashboard-active-badge">ACTIVE</small>}
+          <ArrowRight size={13} />
         </button>
       })}</div>
     </section>}

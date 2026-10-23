@@ -6,10 +6,8 @@ import { logClientError } from '../../data/errorHandling'
 
 type Props = {
   user: User
-  storageStatus?: unknown
   migrationNotice?: string
   onSaveName: (name: string) => Promise<boolean>
-  onDeleteLocalData?: () => void
   onLogout: () => void | Promise<void>
 }
 

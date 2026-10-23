@@ -61,6 +61,12 @@ export async function updateStrategyDocumentRecord(userId: string, id: string, c
   return fromDocumentRow(data as DocumentRow)
 }
 
+export async function renameStrategyDocumentRecord(userId: string, id: string, title: string) {
+  const { data, error } = await requireSupabase().from('documents').update({ title: title.trim(), updated_at: new Date().toISOString() }).eq('user_id', userId).eq('id', id).select(documentColumns).single()
+  if (error) throw error
+  return fromDocumentRow(data as DocumentRow)
+}
+
 export async function syncStrategyDocumentRecord(userId: string, document: StrategyDocument, strategy: StrategyDocument['strategy']) {
   const updatedAt = new Date().toISOString()
   const values = document.status === 'ready'
@@ -75,5 +81,4 @@ export async function deleteStrategyDocumentRecord(userId: string, id: string) {
   const { error } = await requireSupabase().from('documents').delete().eq('user_id', userId).eq('id', id)
   if (error) throw error
 }
-
 

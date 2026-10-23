@@ -1,4 +1,4 @@
-import { Component, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { Component, useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { AppLayout } from './components/layout/AppLayout'
 import { AuthScreen } from './components/auth/AuthScreen'
 import { CurrentUserProvider } from './components/auth/UserContext'
@@ -6,28 +6,23 @@ import { AccountSettings } from './components/pages/AccountSettings'
 import { Dashboard } from './components/pages/Dashboard'
 import { Planning } from './components/pages/Planning'
 import { Strategy } from './components/strategy/Strategy'
-import { WorkspacePage } from './components/pages/WorkspacePage'
 import { StrategyDocuments } from './components/pages/StrategyDocuments'
-import { initialFiles } from './data/mockProject'
 import { createStrategyDocument } from './data/strategyDocument'
-import { createStrategyDocumentRecord, deleteStrategyDocumentRecord, getStrategyDocuments, syncStrategyDocumentRecord, updateStrategyDocumentRecord } from './data/documentService'
+import { createStrategyDocumentRecord, deleteStrategyDocumentRecord, getStrategyDocuments, renameStrategyDocumentRecord, syncStrategyDocumentRecord, updateStrategyDocumentRecord } from './data/documentService'
 import { PLANNING_TASKS_CHANGED_EVENT } from './data/planningTasks'
 import { resolveAgentProposal } from './data/chatService'
 import { getRecentActivity } from './data/activityService'
 import { getPlanningTasks, invalidatePlanningTaskCache } from './data/taskService'
 import { getStrategy } from './data/strategyService'
 import { supabaseAuthProvider } from './data/supabaseAuth'
-import { getUserDataStatus, localStorageDataProvider } from './data/storage'
 import { logClientError } from './data/errorHandling'
 import { hasStrategyProgress, loadStrategyData, saveStrategyData, STRATEGY_DATA_EVENT } from './components/strategy/useStrategy'
-import type { AgentContext, AgentProposal, PlanningTask, ProjectFile, StrategyData, StrategyDocument, StrategyActivity, User, WorkspaceSection, WorkspaceTab } from './types'
+import type { AgentContext, AgentProposal, PlanningTask, StrategyData, StrategyDocument, StrategyActivity, User, WorkspaceSection, WorkspaceTab } from './types'
 
 const initialTabs: WorkspaceTab[] = [
   { id: 'overview', label: 'Dashboard', kind: 'section', section: 'Overview' },
   { id: 'strategy', label: 'Strategy Algorithm', kind: 'section', section: 'Strategy' },
-  { id: 'file:roadmap', label: 'roadmap.md', kind: 'file', fileId: 'roadmap' },
-  { id: 'file:options', label: 'options.md', kind: 'file', fileId: 'options' },
-  { id: 'file:market-analysis', label: 'research.md', kind: 'file', fileId: 'market-analysis' },
+  { id: 'documents', label: 'Documents', kind: 'section', section: 'Documents' },
 ]
 
 class AppErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean }> {
@@ -47,30 +42,29 @@ function createDocumentId() {
   return globalThis.crypto?.randomUUID?.() ?? `strategy-document-${Date.now()}-${Math.random().toString(16).slice(2)}`
 }
 
-function loadProjectFiles(userId: string): ProjectFile[] {
-  const stored = localStorageDataProvider.get<unknown>(userId, 'files')
-  if (Array.isArray(stored) && stored.every((file) => file && typeof file === 'object' && 'userId' in file && file.userId === userId && 'id' in file && typeof file.id === 'string' && 'name' in file && typeof file.name === 'string' && 'folder' in file && typeof file.folder === 'string')) return stored as ProjectFile[]
-  return initialFiles.map((file) => ({ ...file, userId }))
-}
-
 export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null)
   const [authReady, setAuthReady] = useState(false)
   const [authError, setAuthError] = useState('')
+  const [recoveryMode, setRecoveryMode] = useState(() => new URLSearchParams(window.location.search).get('flow') === 'recovery')
 
   useEffect(() => {
     let active = true
-    const unsubscribe = supabaseAuthProvider.subscribe((user) => {
+    let authEventSeen = false
+    const unsubscribe = supabaseAuthProvider.subscribe((user, event) => {
+      authEventSeen = true
       if (active) {
         setCurrentUser(user)
+        if (event === 'PASSWORD_RECOVERY') setRecoveryMode(true)
+        if (event === 'SIGNED_OUT') setRecoveryMode(false)
         setAuthReady(true)
       }
     })
     supabaseAuthProvider.getCurrentUser().then((user) => {
-      if (active) setCurrentUser(user)
+      if (active && !authEventSeen) setCurrentUser(user)
     }).catch((error: unknown) => {
       logClientError('restore auth session', error)
-      if (active) setAuthError('Could not restore your secure session. Please check the connection and try again.')
+      if (active && !authEventSeen) setAuthError('Could not restore your secure session. Please check the connection and try again.')
     }).finally(() => {
       if (active) setAuthReady(true)
     })
@@ -78,8 +72,13 @@ export default function App() {
   }, [])
 
   const onAuthenticated = (user: User) => setCurrentUser(user)
+  const onRecoveryComplete = () => {
+    setRecoveryMode(false)
+    window.history.replaceState({}, document.title, window.location.pathname)
+  }
 
   if (!authReady) return <main className="auth-screen"><section className="auth-panel"><div className="auth-heading"><span className="eyebrow">STRAVIO WORKSPACE</span><h1>Restoring secure session…</h1></div></section></main>
+  if (recoveryMode) return <AppErrorBoundary><AuthScreen onAuthenticated={onAuthenticated} onRecoveryComplete={onRecoveryComplete} initialMode="recovery" /></AppErrorBoundary>
   if (!currentUser) return <AppErrorBoundary><AuthScreen onAuthenticated={onAuthenticated} initialError={authError} key={authError} /></AppErrorBoundary>
 
   return <AppErrorBoundary><CurrentUserProvider user={currentUser}><AuthenticatedWorkspace key={currentUser.id} user={currentUser} migrationNotice={authError || undefined} onLogout={() => supabaseAuthProvider.logout()} onUserUpdated={setCurrentUser} /></CurrentUserProvider></AppErrorBoundary>
@@ -88,7 +87,6 @@ export default function App() {
 type WorkspaceProps = { user: User; migrationNotice?: string; onLogout: () => void; onUserUpdated: (user: User) => void }
 
 function AuthenticatedWorkspace({ user, migrationNotice, onLogout, onUserUpdated }: WorkspaceProps) {
-  const [files, setFiles] = useState<ProjectFile[]>(() => loadProjectFiles(user.id))
   const [strategyDocuments, setStrategyDocuments] = useState<StrategyDocument[]>([])
   const [activity, setActivity] = useState<StrategyActivity[]>([])
   const [planningTasks, setPlanningTasks] = useState<PlanningTask[]>([])
@@ -103,10 +101,6 @@ function AuthenticatedWorkspace({ user, migrationNotice, onLogout, onUserUpdated
   const [query, setQuery] = useState('')
   const [agentOpen, setAgentOpen] = useState(true)
   const [sidebarOpen, setSidebarOpen] = useState(true)
-
-  useEffect(() => {
-    localStorageDataProvider.set(user.id, 'files', files)
-  }, [files, user.id])
 
   const refreshTasks = useCallback(() => {
     void getPlanningTasks(user.id).then(setPlanningTasks).catch((error: unknown) => { logClientError('refresh Planning tasks', error); setWorkspaceError('Could not refresh Planning tasks. Please try again.') })
@@ -182,8 +176,6 @@ function AuthenticatedWorkspace({ user, migrationNotice, onLogout, onUserUpdated
   }, [refreshRecentActivity, refreshTasks, refreshWorkspaceData, syncStrategyDocuments])
 
   const activeTab = tabs.find((tab) => tab.id === activeTabId) ?? initialTabs[0]
-  const activeFile = files.find((file) => file.id === activeTab.fileId)
-  const visibleFiles = useMemo(() => query.trim() ? files.filter((file) => file.name.toLowerCase().includes(query.trim().toLowerCase()) || file.folder.includes(query.trim().toLowerCase())) : files, [files, query])
 
   const getAgentContext = (): AgentContext => {
     const selectedDocument = activeTab.kind === 'strategy-document' ? strategyDocuments.find((document) => document.id === activeTab.strategyDocumentId) : undefined
@@ -197,8 +189,8 @@ function AuthenticatedWorkspace({ user, migrationNotice, onLogout, onUserUpdated
       userId: user.id,
       tasks: hasContext ? planningTasks.filter((task) => task.strategyId === strategy.id) : [],
       documents: strategyDocuments.filter((document) => document.strategy.id === strategy.id),
-      activeView: activeTab.kind === 'section' ? activeTab.section ?? 'Workspace' : activeTab.kind === 'file' ? 'Documents' : 'Strategy Documents',
-      currentDocument: agentPrompt?.currentDocument ?? selectedDocument ?? (activeFile?.content ? { id: activeFile.id, title: activeFile.name, content: activeFile.content } : undefined),
+      activeView: activeTab.kind === 'section' ? activeTab.section ?? 'Workspace' : 'Documents',
+      currentDocument: agentPrompt?.currentDocument ?? selectedDocument,
     }
   }
 
@@ -206,8 +198,7 @@ function AuthenticatedWorkspace({ user, migrationNotice, onLogout, onUserUpdated
     setTabs((current) => current.some((item) => item.id === tab.id) ? current : [...current, tab])
     setActiveTabId(tab.id)
     if (tab.kind === 'section' && tab.section) setActiveSection(tab.section)
-    if (tab.kind === 'file') setActiveSection('Documents')
-    if (tab.kind === 'strategy-document') setActiveSection('Strategy Documents')
+    if (tab.kind === 'strategy-document') setActiveSection('Documents')
   }
 
   const navigate = (section: WorkspaceSection) => {
@@ -251,7 +242,28 @@ function AuthenticatedWorkspace({ user, migrationNotice, onLogout, onUserUpdated
 
   const handleAgentPrompt = (id: string) => setAgentPrompt((current) => current?.id === id ? undefined : current)
 
-  const openFile = (file: ProjectFile) => openTab({ id: `file:${file.id}`, label: file.name, kind: 'file', fileId: file.id })
+  const createBlankDocument = async () => {
+    try {
+      const strategy = await saveStrategyData(loadStrategyData(user.id))
+      const now = new Date().toISOString()
+      const document = await createStrategyDocumentRecord({
+        userId: user.id,
+        id: createDocumentId(),
+        title: 'Untitled Document',
+        content: '',
+        createdAt: now,
+        updatedAt: now,
+        status: 'ready',
+        strategy,
+      })
+      setStrategyDocuments((current) => [document, ...current])
+      openTab({ id: `strategy-document:${document.id}`, label: document.title, kind: 'strategy-document', section: 'Documents', strategyDocumentId: document.id })
+      setWorkspaceError('')
+    } catch (error) {
+      logClientError('create document', error)
+      setWorkspaceError('The document was not created. Please check the connection and try again.')
+    }
+  }
 
   const closeTab = (tab: WorkspaceTab) => {
     const nextTabs = tabs.filter((item) => item.id !== tab.id)
@@ -260,14 +272,8 @@ function AuthenticatedWorkspace({ user, migrationNotice, onLogout, onUserUpdated
       const nextTab = nextTabs[Math.max(0, tabs.findIndex((item) => item.id === tab.id) - 1)] ?? initialTabs[0]
       setActiveTabId(nextTab.id)
       if (nextTab.section) setActiveSection(nextTab.section)
-      else setActiveSection(nextTab.kind === 'strategy-document' ? 'Strategy Documents' : 'Documents')
+      else setActiveSection('Documents')
     }
-  }
-
-  const createFile = (folder: string, name: string) => {
-    const file: ProjectFile = { id: `${folder}-${Date.now()}`, userId: user.id, name, folder, content: '' }
-    setFiles((current) => [...current, file])
-    openFile(file)
   }
 
   const generateStrategyDocument = async (strategy: StrategyData) => {
@@ -277,7 +283,7 @@ function AuthenticatedWorkspace({ user, migrationNotice, onLogout, onUserUpdated
       const document = await createStrategyDocumentRecord(createStrategyDocument(savedStrategy))
       setStrategyDocuments((current) => [document, ...current])
       refreshRecentActivity()
-      openTab({ id: `strategy-document:${document.id}`, label: document.title, kind: 'strategy-document', section: 'Strategy Documents', strategyDocumentId: document.id })
+      openTab({ id: `strategy-document:${document.id}`, label: document.title, kind: 'strategy-document', section: 'Documents', strategyDocumentId: document.id })
       setWorkspaceError('')
       return true
     } catch (error) {
@@ -301,6 +307,22 @@ function AuthenticatedWorkspace({ user, migrationNotice, onLogout, onUserUpdated
     }
   }
 
+  const renameStrategyDocument = async (id: string, title: string) => {
+    if (!title.trim()) return false
+    try {
+      const updated = await renameStrategyDocumentRecord(user.id, id, title)
+      setStrategyDocuments((current) => current.map((document) => document.id === id ? updated : document))
+      setTabs((current) => current.map((tab) => tab.strategyDocumentId === id ? { ...tab, label: updated.title } : tab))
+      refreshRecentActivity()
+      setWorkspaceError('')
+      return true
+    } catch (error) {
+      logClientError('rename strategy document', error)
+      setWorkspaceError('The document was not renamed. Please check the connection and try again.')
+      return false
+    }
+  }
+
   const duplicateStrategyDocument = async (document: StrategyDocument) => {
     const now = new Date().toISOString()
     if (document.userId !== user.id) return false
@@ -308,7 +330,7 @@ function AuthenticatedWorkspace({ user, migrationNotice, onLogout, onUserUpdated
       const duplicate = await createStrategyDocumentRecord({ ...document, id: createDocumentId(), title: `${document.title} (Copy)`, createdAt: now, updatedAt: now, status: 'ready', strategy: structuredClone(document.strategy) })
       setStrategyDocuments((current) => [duplicate, ...current])
       refreshRecentActivity()
-      openTab({ id: `strategy-document:${duplicate.id}`, label: duplicate.title, kind: 'strategy-document', section: 'Strategy Documents', strategyDocumentId: duplicate.id })
+      openTab({ id: `strategy-document:${duplicate.id}`, label: duplicate.title, kind: 'strategy-document', section: 'Documents', strategyDocumentId: duplicate.id })
       return true
     } catch (error) {
       logClientError('duplicate strategy document', error)
@@ -330,29 +352,23 @@ function AuthenticatedWorkspace({ user, migrationNotice, onLogout, onUserUpdated
     const nextTabs = tabs.filter((tab) => tab.strategyDocumentId !== id)
     setTabs(nextTabs)
     if (activeTab.strategyDocumentId === id) {
-      const listTab: WorkspaceTab = { id: 'strategy documents', label: 'Strategy Documents', kind: 'section', section: 'Strategy Documents' }
+      const listTab: WorkspaceTab = { id: 'documents', label: 'Documents', kind: 'section', section: 'Documents' }
       setTabs((current) => current.some((tab) => tab.id === listTab.id) ? current : [...current, listTab])
       setActiveTabId(listTab.id)
-      setActiveSection('Strategy Documents')
+      setActiveSection('Documents')
     }
     return true
   }
 
   const saveProfileName = async (name: string) => {
     const updated = await supabaseAuthProvider.updateProfile(user.id, name)
-    if (!updated) return false
     onUserUpdated(updated)
     return true
   }
 
-  const deleteLocalUserData = () => {
-    localStorageDataProvider.removeUserData(user.id)
-    window.location.reload()
-  }
+  const addTab = () => navigate('Documents')
 
-  const addTab = () => navigate('Strategy Documents')
-
-  return <AppLayout activeSection={activeSection} tabs={tabs} activeTabId={activeTabId} files={visibleFiles} activeFile={activeFile?.id} query={query} agentOpen={agentOpen} agentContext={getAgentContext} agentPrompt={agentPrompt} sidebarOpen={sidebarOpen} onQueryChange={setQuery} onNavigate={navigate} onOpenFile={openFile} onCreateFile={createFile} onSelectTab={openTab} onCloseTab={closeTab} onAddTab={addTab} onToggleAgent={() => setAgentOpen((open) => !open)} onCloseAgent={() => setAgentOpen(false)} onAgentPromptHandled={handleAgentPrompt} onApplyAgentProposal={handleAgentProposal} onToggleSidebar={() => setSidebarOpen((open) => !open)}>
-    {activeTab.kind === 'strategy-document' ? <StrategyDocuments documents={strategyDocuments} selectedDocumentId={activeTab.strategyDocumentId} onOpen={(document) => openTab({ id: `strategy-document:${document.id}`, label: document.title, kind: 'strategy-document', section: 'Strategy Documents', strategyDocumentId: document.id })} onSave={saveStrategyDocument} onDelete={deleteStrategyDocument} onDuplicate={duplicateStrategyDocument} onBack={() => navigate('Strategy Documents')} onOpenPlanning={openPlanningForStrategy} onAskAI={askAgent} /> : activeTab.kind === 'file' ? <WorkspacePage section="Documents" fileName={activeFile?.name ?? activeTab.label} fileContent={activeFile?.content} /> : activeTab.section === 'Strategy' ? <Strategy onGenerateDocument={generateStrategyDocument} onAskAI={askAgent} /> : activeTab.section === 'Strategy Documents' ? <StrategyDocuments documents={strategyDocuments} onOpen={(document) => openTab({ id: `strategy-document:${document.id}`, label: document.title, kind: 'strategy-document', section: 'Strategy Documents', strategyDocumentId: document.id })} onSave={saveStrategyDocument} onDelete={deleteStrategyDocument} onDuplicate={duplicateStrategyDocument} onBack={() => navigate('Strategy Documents')} onOpenPlanning={openPlanningForStrategy} onAskAI={askAgent} /> : activeTab.section === 'Overview' ? <Dashboard documents={strategyDocuments} activity={activity} migrationNotice={migrationNotice} onOpenStrategy={() => navigate('Strategy')} onOpenDocuments={() => navigate('Strategy Documents')} onOpenDocument={(document) => openTab({ id: `strategy-document:${document.id}`, label: document.title, kind: 'strategy-document', section: 'Strategy Documents', strategyDocumentId: document.id })} onOpenAgent={askAgent} onOpenPlanning={() => navigate('Planning')} /> : activeTab.section === 'Planning' ? <Planning strategyOverride={planningStrategyOverride} onCreateStrategy={() => navigate('Strategy')} onAskAI={askAgent} /> : activeTab.section === 'Settings' ? <AccountSettings user={user} storageStatus={getUserDataStatus(user.id)} migrationNotice={migrationNotice} onSaveName={saveProfileName} onLogout={onLogout} onDeleteLocalData={deleteLocalUserData} /> : <WorkspacePage section={activeTab.section ?? 'Overview'} />}
+  return <AppLayout activeSection={activeSection} tabs={tabs} activeTabId={activeTabId} query={query} agentOpen={agentOpen} agentContext={getAgentContext} agentPrompt={agentPrompt} sidebarOpen={sidebarOpen} onQueryChange={setQuery} onNavigate={navigate} onSelectTab={openTab} onCloseTab={closeTab} onAddTab={addTab} onToggleAgent={() => setAgentOpen((open) => !open)} onCloseAgent={() => setAgentOpen(false)} onAgentPromptHandled={handleAgentPrompt} onApplyAgentProposal={handleAgentProposal} onToggleSidebar={() => setSidebarOpen((open) => !open)}>
+    {activeTab.kind === 'strategy-document' ? <StrategyDocuments documents={strategyDocuments} selectedDocumentId={activeTab.strategyDocumentId} onCreate={() => void createBlankDocument()} onOpen={(document) => openTab({ id: `strategy-document:${document.id}`, label: document.title, kind: 'strategy-document', section: 'Documents', strategyDocumentId: document.id })} onSave={saveStrategyDocument} onRename={renameStrategyDocument} onDelete={deleteStrategyDocument} onDuplicate={duplicateStrategyDocument} onBack={() => navigate('Documents')} onOpenPlanning={openPlanningForStrategy} onAskAI={askAgent} /> : activeTab.section === 'Strategy' ? <Strategy onGenerateDocument={generateStrategyDocument} onAskAI={askAgent} /> : activeTab.section === 'Documents' ? <StrategyDocuments documents={strategyDocuments} onCreate={() => void createBlankDocument()} onOpen={(document) => openTab({ id: `strategy-document:${document.id}`, label: document.title, kind: 'strategy-document', section: 'Documents', strategyDocumentId: document.id })} onSave={saveStrategyDocument} onRename={renameStrategyDocument} onDelete={deleteStrategyDocument} onDuplicate={duplicateStrategyDocument} onBack={() => navigate('Documents')} onOpenPlanning={openPlanningForStrategy} onAskAI={askAgent} /> : activeTab.section === 'Overview' ? <Dashboard documents={strategyDocuments} activity={activity} migrationNotice={migrationNotice} onOpenStrategy={() => navigate('Strategy')} onOpenDocuments={() => navigate('Documents')} onOpenDocument={(document) => openTab({ id: `strategy-document:${document.id}`, label: document.title, kind: 'strategy-document', section: 'Documents', strategyDocumentId: document.id })} onOpenAgent={askAgent} onOpenPlanning={() => navigate('Planning')} /> : activeTab.section === 'Planning' ? <Planning strategyOverride={planningStrategyOverride} onCreateStrategy={() => navigate('Strategy')} onAskAI={askAgent} /> : <AccountSettings user={user} migrationNotice={migrationNotice} onSaveName={saveProfileName} onLogout={onLogout} />}
   </AppLayout>
 }

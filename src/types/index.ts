@@ -1,12 +1,8 @@
 export type WorkspaceSection =
   | 'Overview'
   | 'Strategy'
-  | 'Strategy Documents'
-  | 'Research'
   | 'Documents'
   | 'Planning'
-  | 'Tasks'
-  | 'Insights'
   | 'Settings'
 
 export type User = {
@@ -15,20 +11,11 @@ export type User = {
   email: string
 }
 
-export type ProjectFile = {
-  id: string
-  userId: string
-  name: string
-  folder: string
-  content?: string
-}
-
 export type WorkspaceTab = {
   id: string
   label: string
-  kind: 'section' | 'file' | 'strategy-document'
+  kind: 'section' | 'strategy-document'
   section?: WorkspaceSection
-  fileId?: string
   strategyDocumentId?: string
 }
 
