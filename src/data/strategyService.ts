@@ -1,92 +1,83 @@
 import type { StrategyData } from '../types'
 import { createInitialStrategy } from './strategyAlgorithm'
+import { addLocalActivity, readLocalWorkspace, updateLocalWorkspace, writeLocalWorkspace } from './localWorkspace'
 import { localStorageDataProvider } from './storage'
-import { requireSupabase } from './supabaseClient'
-
-type StrategyRow = {
-  id: string
-  user_id: string
-  name: string
-  description: string
-  data: StrategyData
-  workflow_step: number
-  completed: boolean
-  created_at: string
-  updated_at: string
-}
 
 const strategyCache = new Map<string, StrategyData[]>()
 
-function orderActiveStrategy(userId: string, strategies: StrategyData[]) {
-  const selectedId = localStorageDataProvider.get<string>(userId, 'active-strategy')
+function orderActiveStrategy(userId: string, strategies: StrategyData[], activeStrategyId?: string) {
+  const selectedId = activeStrategyId ?? localStorageDataProvider.get<string>(userId, 'active-strategy')
   const selected = strategies.find((strategy) => strategy.id === selectedId) ?? strategies[0]
   return selected ? [selected, ...strategies.filter((strategy) => strategy.id !== selected.id)] : strategies
 }
 
-function fromRow(row: StrategyRow): StrategyData {
-  return { ...row.data, id: row.id, userId: row.user_id, name: row.name, description: row.description, workflowStep: row.workflow_step, completed: row.completed, createdAt: row.created_at, updatedAt: row.updated_at }
-}
-
-function toRow(strategy: StrategyData) {
-  return {
-    id: strategy.id,
-    user_id: strategy.userId,
-    name: strategy.name,
-    description: strategy.description,
-    data: strategy,
-    workflow_step: strategy.workflowStep,
-    completed: strategy.completed,
-    created_at: strategy.createdAt,
-    updated_at: strategy.updatedAt,
-  }
-}
-
 export async function getStrategies(userId: string) {
-  const { data, error } = await requireSupabase().from('strategies').select('id,user_id,name,description,data,workflow_step,completed,created_at,updated_at').eq('user_id', userId).order('updated_at', { ascending: false })
-  if (error) throw error
-  const strategies = orderActiveStrategy(userId, (data as StrategyRow[]).map(fromRow))
+  const workspace = readLocalWorkspace(userId)
+  const strategies = orderActiveStrategy(userId, workspace.strategies, workspace.activeStrategyId)
   strategyCache.set(userId, strategies)
   return strategies
 }
 
 export async function getStrategy(userId: string, strategyId: string) {
-  const { data, error } = await requireSupabase().from('strategies').select('id,user_id,name,description,data,workflow_step,completed,created_at,updated_at').eq('user_id', userId).eq('id', strategyId).maybeSingle()
-  if (error) throw error
-  if (!data) return null
-  const strategy = fromRow(data as StrategyRow)
+  const strategy = readLocalWorkspace(userId).strategies.find((entry) => entry.id === strategyId)
+  if (!strategy) return null
   const cached = strategyCache.get(userId) ?? []
   strategyCache.set(userId, [strategy, ...cached.filter((entry) => entry.id !== strategy.id)])
   return strategy
 }
 
 export async function createStrategy(strategy: StrategyData) {
-  const { data, error } = await requireSupabase().from('strategies').insert(toRow(strategy)).select('id,user_id,name,description,data,workflow_step,completed,created_at,updated_at').single()
-  if (error) throw error
-  const created = fromRow(data as StrategyRow)
+  const created = updateLocalWorkspace(strategy.userId, (workspace) => {
+    if (workspace.strategies.some((entry) => entry.id === strategy.id)) {
+      throw new Error('A strategy with this identifier already exists.')
+    }
+    workspace.strategies.unshift(strategy)
+    workspace.activeStrategyId = strategy.id
+    addLocalActivity(workspace, strategy.userId, 'strategy-created', strategy.name, strategy.id)
+    return strategy
+  })
   const cached = strategyCache.get(strategy.userId) ?? []
-  strategyCache.set(strategy.userId, [created, ...cached])
-  localStorageDataProvider.set(strategy.userId, 'active-strategy', created.id)
+  strategyCache.set(strategy.userId, [created, ...cached.filter((entry) => entry.id !== created.id)])
   return created
 }
 
 export async function updateStrategy(strategy: StrategyData) {
-  const { data, error } = await requireSupabase().from('strategies').upsert(toRow(strategy), { onConflict: 'id,user_id' }).select('id,user_id,name,description,data,workflow_step,completed,created_at,updated_at').single()
-  if (error) throw error
-  const updated = fromRow(data as StrategyRow)
+  const updated = updateLocalWorkspace(strategy.userId, (workspace) => {
+    const index = workspace.strategies.findIndex((entry) => entry.id === strategy.id)
+    const previousStrategy = workspace.strategies[index]
+    if (index === -1) workspace.strategies.unshift(strategy)
+    else workspace.strategies[index] = strategy
+    for (const document of workspace.documents) {
+      if (document.strategy.id === strategy.id && document.status === 'ready') document.strategy = strategy
+    }
+    addLocalActivity(
+      workspace,
+      strategy.userId,
+      !previousStrategy?.completed && strategy.completed ? 'strategy-completed' : 'strategy-updated',
+      strategy.name,
+      strategy.id,
+    )
+    return strategy
+  })
   const cached = strategyCache.get(strategy.userId) ?? []
   strategyCache.set(strategy.userId, [updated, ...cached.filter((entry) => entry.id !== updated.id)])
   return updated
 }
 
 export async function deleteStrategy(userId: string, strategyId: string) {
-  const { error } = await requireSupabase().from('strategies').delete().eq('user_id', userId).eq('id', strategyId)
-  if (error) throw error
-  const remaining = (strategyCache.get(userId) ?? []).filter((strategy) => strategy.id !== strategyId)
+  const remaining = updateLocalWorkspace(userId, (workspace) => {
+    workspace.strategies = workspace.strategies.filter((strategy) => strategy.id !== strategyId)
+    workspace.documents = workspace.documents.filter((document) => document.strategy.id !== strategyId)
+    workspace.tasks = workspace.tasks.filter((task) => task.strategyId !== strategyId)
+    delete workspace.chats[strategyId]
+    workspace.activities = workspace.activities.filter((activity) => activity.strategyId !== strategyId)
+    if (workspace.activeStrategyId === strategyId
+      || (!workspace.activeStrategyId && localStorageDataProvider.get<string>(userId, 'active-strategy') === strategyId)) {
+      workspace.activeStrategyId = workspace.strategies[0]?.id
+    }
+    return orderActiveStrategy(userId, workspace.strategies, workspace.activeStrategyId)
+  })
   strategyCache.set(userId, remaining)
-  if (localStorageDataProvider.get<string>(userId, 'active-strategy') === strategyId) {
-    if (remaining[0]) localStorageDataProvider.set(userId, 'active-strategy', remaining[0].id)
-    else localStorageDataProvider.set(userId, 'active-strategy', '')
-  }
 }
 
 export function getCachedActiveStrategy(userId: string) {
@@ -94,11 +85,13 @@ export function getCachedActiveStrategy(userId: string) {
 }
 
 export function selectActiveStrategy(userId: string, strategyId: string) {
-  const strategies = strategyCache.get(userId) ?? []
+  const strategies = strategyCache.get(userId) ?? readLocalWorkspace(userId).strategies
   const selected = strategies.find((strategy) => strategy.id === strategyId)
   if (!selected) throw new Error('The selected strategy is not available in this workspace.')
-  localStorageDataProvider.set(userId, 'active-strategy', selected.id)
-  strategyCache.set(userId, [selected, ...strategies.filter((strategy) => strategy.id !== selected.id)])
+  const workspace = readLocalWorkspace(userId)
+  workspace.activeStrategyId = selected.id
+  writeLocalWorkspace(userId, workspace)
+  strategyCache.set(userId, [selected, ...strategies.filter((entry) => entry.id !== selected.id)])
   return selected
 }
 

@@ -14,8 +14,9 @@ import { resolveAgentProposal } from './data/chatService'
 import { getRecentActivity } from './data/activityService'
 import { getPlanningTasks, invalidatePlanningTaskCache } from './data/taskService'
 import { getStrategy } from './data/strategyService'
-import { supabaseAuthProvider } from './data/supabaseAuth'
-import { logClientError } from './data/errorHandling'
+import { demoAuthProvider } from './data/supabaseAuth'
+import { authRedirectError, isPasswordRecoveryRequested } from './data/authErrors'
+import { logClientError, userFacingError } from './data/errorHandling'
 import { hasStrategyProgress, loadStrategyData, saveStrategyData, STRATEGY_DATA_EVENT } from './components/strategy/useStrategy'
 import type { AgentContext, AgentProposal, PlanningTask, StrategyData, StrategyDocument, StrategyActivity, User, WorkspaceSection, WorkspaceTab } from './types'
 
@@ -45,13 +46,19 @@ function createDocumentId() {
 export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null)
   const [authReady, setAuthReady] = useState(false)
-  const [authError, setAuthError] = useState('')
-  const [recoveryMode, setRecoveryMode] = useState(() => new URLSearchParams(window.location.search).get('flow') === 'recovery')
+  const [authError, setAuthError] = useState(() => authRedirectError(window.location.search, window.location.hash) ?? '')
+  const [recoveryMode, setRecoveryMode] = useState(() => isPasswordRecoveryRequested(window.location.search, window.location.hash))
 
   useEffect(() => {
     let active = true
     let authEventSeen = false
-    const unsubscribe = supabaseAuthProvider.subscribe((user, event) => {
+    if (authError) {
+      const url = new URL(window.location.href)
+      for (const key of ['error', 'error_code', 'error_description', 'flow']) url.searchParams.delete(key)
+      url.hash = ''
+      window.history.replaceState(window.history.state, document.title, url)
+    }
+    const unsubscribe = demoAuthProvider.subscribe((user, event) => {
       authEventSeen = true
       if (active) {
         setCurrentUser(user)
@@ -60,28 +67,32 @@ export default function App() {
         setAuthReady(true)
       }
     })
-    supabaseAuthProvider.getCurrentUser().then((user) => {
+    demoAuthProvider.getCurrentUser().then((user) => {
       if (active && !authEventSeen) setCurrentUser(user)
     }).catch((error: unknown) => {
       logClientError('restore auth session', error)
-      if (active && !authEventSeen) setAuthError('Could not restore your secure session. Please check the connection and try again.')
+      if (active && !authEventSeen) setAuthError(error instanceof Error ? error.message : 'Could not restore the local profile. Please try again.')
     }).finally(() => {
       if (active) setAuthReady(true)
     })
     return () => { active = false; unsubscribe() }
   }, [])
 
-  const onAuthenticated = (user: User) => setCurrentUser(user)
+  const onAuthenticated = (user: User, notice?: string) => {
+    setCurrentUser(user)
+    setAuthError(notice ?? '')
+  }
   const onRecoveryComplete = () => {
     setRecoveryMode(false)
+    setAuthError('')
     window.history.replaceState({}, document.title, window.location.pathname)
   }
 
-  if (!authReady) return <main className="auth-screen"><section className="auth-panel"><div className="auth-heading"><span className="eyebrow">STRAVIO WORKSPACE</span><h1>Restoring secure session…</h1></div></section></main>
+  if (!authReady) return <main className="auth-screen"><section className="auth-panel"><div className="auth-heading"><span className="eyebrow">STRAVIO WORKSPACE</span><h1>Restoring local profile…</h1></div></section></main>
   if (recoveryMode) return <AppErrorBoundary><AuthScreen onAuthenticated={onAuthenticated} onRecoveryComplete={onRecoveryComplete} initialMode="recovery" /></AppErrorBoundary>
   if (!currentUser) return <AppErrorBoundary><AuthScreen onAuthenticated={onAuthenticated} initialError={authError} key={authError} /></AppErrorBoundary>
 
-  return <AppErrorBoundary><CurrentUserProvider user={currentUser}><AuthenticatedWorkspace key={currentUser.id} user={currentUser} migrationNotice={authError || undefined} onLogout={() => supabaseAuthProvider.logout()} onUserUpdated={setCurrentUser} /></CurrentUserProvider></AppErrorBoundary>
+  return <AppErrorBoundary><CurrentUserProvider user={currentUser}><AuthenticatedWorkspace key={currentUser.id} user={currentUser} migrationNotice={authError || undefined} onLogout={() => demoAuthProvider.logout()} onUserUpdated={setCurrentUser} /></CurrentUserProvider></AppErrorBoundary>
 }
 
 type WorkspaceProps = { user: User; migrationNotice?: string; onLogout: () => void; onUserUpdated: (user: User) => void }
@@ -103,7 +114,7 @@ function AuthenticatedWorkspace({ user, migrationNotice, onLogout, onUserUpdated
   const [sidebarOpen, setSidebarOpen] = useState(true)
 
   const refreshTasks = useCallback(() => {
-    void getPlanningTasks(user.id).then(setPlanningTasks).catch((error: unknown) => { logClientError('refresh Planning tasks', error); setWorkspaceError('Could not refresh Planning tasks. Please try again.') })
+    void getPlanningTasks(user.id).then(setPlanningTasks).catch((error: unknown) => { logClientError('refresh Planning tasks', error); setWorkspaceError(userFacingError(error, 'Could not refresh Planning tasks. Please try again.')) })
   }, [user.id])
 
   const refreshRecentActivity = useCallback(() => {
@@ -119,7 +130,7 @@ function AuthenticatedWorkspace({ user, migrationNotice, onLogout, onUserUpdated
       setPlanningTasks(tasks)
       setWorkspaceLoading(false)
       setWorkspaceError('')
-    }).catch((error: unknown) => { logClientError('refresh workspace', error); setWorkspaceLoading(false); setWorkspaceLoadError('Workspace data could not be loaded. Please check the connection and try again.') })
+    }).catch((error: unknown) => { logClientError('refresh workspace', error); setWorkspaceLoading(false); setWorkspaceLoadError(userFacingError(error, 'Workspace data could not be loaded. Please try again.')) })
   }, [user.id])
 
   useEffect(() => {
@@ -136,7 +147,7 @@ function AuthenticatedWorkspace({ user, migrationNotice, onLogout, onUserUpdated
       logClientError('load workspace data', error)
       if (active) {
         setWorkspaceLoading(false)
-        setWorkspaceLoadError('Workspace data could not be loaded. Please check the connection and try again.')
+        setWorkspaceLoadError(userFacingError(error, 'Workspace data could not be loaded. Please try again.'))
       }
     })
     return () => { active = false }
@@ -223,7 +234,7 @@ function AuthenticatedWorkspace({ user, migrationNotice, onLogout, onUserUpdated
     if (!strategyId || strategyId !== context.strategy.id || (proposal.kind === 'update-desired-state' && proposal.userId !== user.id)
       || (proposal.kind === 'create-tasks' && (!proposal.tasks.length || proposal.tasks.some((task) => task.userId !== user.id || task.strategyId !== strategyId)))) return false
     try {
-      await resolveAgentProposal(strategyId, messageId, 'apply')
+      await resolveAgentProposal(user.id, strategyId, messageId, 'apply')
       if (proposal.kind === 'create-tasks') {
         invalidatePlanningTaskCache(user.id)
         window.dispatchEvent(new Event(PLANNING_TASKS_CHANGED_EVENT))
@@ -235,7 +246,7 @@ function AuthenticatedWorkspace({ user, migrationNotice, onLogout, onUserUpdated
       return true
     } catch (error) {
       logClientError('apply AI proposal', error)
-      setWorkspaceError('The AI change was not applied. Please check the connection and try again.')
+      setWorkspaceError(userFacingError(error, 'The AI change was not applied. Please try again.'))
       return false
     }
   }
@@ -261,7 +272,7 @@ function AuthenticatedWorkspace({ user, migrationNotice, onLogout, onUserUpdated
       setWorkspaceError('')
     } catch (error) {
       logClientError('create document', error)
-      setWorkspaceError('The document was not created. Please check the connection and try again.')
+      setWorkspaceError(userFacingError(error, 'The document was not created. Please try again.'))
     }
   }
 
@@ -288,7 +299,7 @@ function AuthenticatedWorkspace({ user, migrationNotice, onLogout, onUserUpdated
       return true
     } catch (error) {
       logClientError('create strategy document', error)
-      setWorkspaceError('The document was not created. Please check the connection and try again.')
+      setWorkspaceError(userFacingError(error, 'The document was not created. Please try again.'))
       return false
     }
   }
@@ -302,7 +313,7 @@ function AuthenticatedWorkspace({ user, migrationNotice, onLogout, onUserUpdated
       return true
     } catch (error) {
       logClientError('save strategy document', error)
-      setWorkspaceError('The document was not saved. Please check the connection and try again.')
+      setWorkspaceError(userFacingError(error, 'The document was not saved. Please try again.'))
       return false
     }
   }
@@ -318,7 +329,7 @@ function AuthenticatedWorkspace({ user, migrationNotice, onLogout, onUserUpdated
       return true
     } catch (error) {
       logClientError('rename strategy document', error)
-      setWorkspaceError('The document was not renamed. Please check the connection and try again.')
+      setWorkspaceError(userFacingError(error, 'The document was not renamed. Please try again.'))
       return false
     }
   }
@@ -334,7 +345,7 @@ function AuthenticatedWorkspace({ user, migrationNotice, onLogout, onUserUpdated
       return true
     } catch (error) {
       logClientError('duplicate strategy document', error)
-      setWorkspaceError('The document was not duplicated. Please try again.')
+      setWorkspaceError(userFacingError(error, 'The document was not duplicated. Please try again.'))
       return false
     }
   }
@@ -346,7 +357,7 @@ function AuthenticatedWorkspace({ user, migrationNotice, onLogout, onUserUpdated
       refreshRecentActivity()
     } catch (error) {
       logClientError('delete strategy document', error)
-      setWorkspaceError('The document was not deleted. Please try again.')
+      setWorkspaceError(userFacingError(error, 'The document was not deleted. Please try again.'))
       return false
     }
     const nextTabs = tabs.filter((tab) => tab.strategyDocumentId !== id)
@@ -361,7 +372,7 @@ function AuthenticatedWorkspace({ user, migrationNotice, onLogout, onUserUpdated
   }
 
   const saveProfileName = async (name: string) => {
-    const updated = await supabaseAuthProvider.updateProfile(user.id, name)
+    const updated = await demoAuthProvider.updateProfile(user.id, name)
     onUserUpdated(updated)
     return true
   }

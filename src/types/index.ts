@@ -179,4 +179,5 @@ export type AgentJob = {
   source?: 'action' | 'chat'
   strategyId?: string
   proposal?: AgentProposal
+  message?: AgentMessage
 }

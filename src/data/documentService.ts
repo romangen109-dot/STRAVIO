@@ -1,84 +1,63 @@
 import type { StrategyDocument } from '../types'
 import { createStrategyDocumentContent } from './strategyDocument'
-import { requireSupabase } from './supabaseClient'
-
-type DocumentRow = {
-  id: string
-  user_id: string
-  strategy_id: string
-  title: string
-  content: string
-  status: 'ready' | 'edited'
-  strategy_snapshot: StrategyDocument['strategy']
-  created_at: string
-  updated_at: string
-}
-
-const documentColumns = 'id,user_id,strategy_id,title,content,status,strategy_snapshot,created_at,updated_at'
-
-function fromDocumentRow(row: DocumentRow): StrategyDocument {
-  return {
-    id: row.id,
-    userId: row.user_id,
-    title: row.title,
-    content: row.content,
-    status: row.status,
-    strategy: { ...row.strategy_snapshot, id: row.strategy_id, userId: row.user_id },
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-  }
-}
-
-function toDocumentRow(document: StrategyDocument) {
-  return {
-    id: document.id,
-    user_id: document.userId,
-    strategy_id: document.strategy.id,
-    title: document.title,
-    content: document.content,
-    status: document.status,
-    strategy_snapshot: document.strategy,
-    created_at: document.createdAt,
-    updated_at: document.updatedAt,
-  }
-}
+import { addLocalActivity, readLocalWorkspace, updateLocalWorkspace } from './localWorkspace'
 
 export async function getStrategyDocuments(userId: string) {
-  const { data, error } = await requireSupabase().from('documents').select(documentColumns).eq('user_id', userId).order('created_at', { ascending: false })
-  if (error) throw error
-  return (data as DocumentRow[]).map(fromDocumentRow)
+  return readLocalWorkspace(userId).documents
+    .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
 }
 
 export async function createStrategyDocumentRecord(document: StrategyDocument) {
-  const { data, error } = await requireSupabase().from('documents').insert(toDocumentRow(document)).select(documentColumns).single()
-  if (error) throw error
-  return fromDocumentRow(data as DocumentRow)
+  return updateLocalWorkspace(document.userId, (workspace) => {
+    if (workspace.documents.some((entry) => entry.id === document.id)) {
+      throw new Error('A document with this identifier already exists.')
+    }
+    workspace.documents.unshift(document)
+    addLocalActivity(workspace, document.userId, 'document-generated', document.title, document.strategy.id, document.id)
+    return document
+  })
 }
 
 export async function updateStrategyDocumentRecord(userId: string, id: string, content: string) {
-  const { data, error } = await requireSupabase().from('documents').update({ content, status: 'edited', updated_at: new Date().toISOString() }).eq('user_id', userId).eq('id', id).select(documentColumns).single()
-  if (error) throw error
-  return fromDocumentRow(data as DocumentRow)
+  return updateLocalWorkspace(userId, (workspace) => {
+    const document = workspace.documents.find((entry) => entry.id === id)
+    if (!document) throw new Error('The document no longer exists in this local profile.')
+    document.content = content
+    document.status = 'edited'
+    document.updatedAt = new Date().toISOString()
+    addLocalActivity(workspace, userId, 'document-edited', document.title, document.strategy.id, id)
+    return document
+  })
 }
 
 export async function renameStrategyDocumentRecord(userId: string, id: string, title: string) {
-  const { data, error } = await requireSupabase().from('documents').update({ title: title.trim(), updated_at: new Date().toISOString() }).eq('user_id', userId).eq('id', id).select(documentColumns).single()
-  if (error) throw error
-  return fromDocumentRow(data as DocumentRow)
+  return updateLocalWorkspace(userId, (workspace) => {
+    const document = workspace.documents.find((entry) => entry.id === id)
+    if (!document) throw new Error('The document no longer exists in this local profile.')
+    document.title = title.trim()
+    document.updatedAt = new Date().toISOString()
+    return document
+  })
 }
 
 export async function syncStrategyDocumentRecord(userId: string, document: StrategyDocument, strategy: StrategyDocument['strategy']) {
-  const updatedAt = new Date().toISOString()
-  const values = document.status === 'ready'
-    ? { strategy_snapshot: strategy, content: createStrategyDocumentContent(strategy), updated_at: updatedAt }
-    : { strategy_snapshot: strategy }
-  const { data, error } = await requireSupabase().from('documents').update(values).eq('user_id', userId).eq('id', document.id).select(documentColumns).single()
-  if (error) throw error
-  return fromDocumentRow(data as DocumentRow)
+  return updateLocalWorkspace(userId, (workspace) => {
+    const current = workspace.documents.find((entry) => entry.id === document.id)
+    if (!current) throw new Error('The document no longer exists in this local profile.')
+    current.strategy = strategy
+    current.updatedAt = new Date().toISOString()
+    if (current.status === 'ready') {
+      current.content = createStrategyDocumentContent(strategy)
+    }
+    return current
+  })
 }
 
 export async function deleteStrategyDocumentRecord(userId: string, id: string) {
-  const { error } = await requireSupabase().from('documents').delete().eq('user_id', userId).eq('id', id)
-  if (error) throw error
+  updateLocalWorkspace(userId, (workspace) => {
+    const index = workspace.documents.findIndex((entry) => entry.id === id)
+    if (index === -1) return
+    const [document] = workspace.documents.splice(index, 1)
+    addLocalActivity(workspace, userId, 'document-deleted', document.title, document.strategy.id, id)
+  })
 }
-

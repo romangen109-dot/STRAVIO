@@ -27,7 +27,7 @@ export function Strategy({ onGenerateDocument, onAskAI }: Props) {
   const deleteStage = (id: string) => updateStrategy((current) => ({ ...current, stages: current.stages.filter((stage) => stage.id !== id) }))
   const finishControl = () => updateStrategy((current) => ({ ...current, completed: true, workflowStep: 5 }))
 
-  if (loading) return <div className="strategy-page"><section className="workspace-panel algorithm-completed" aria-live="polite">Loading strategy from the cloud…</section></div>
+  if (loading) return <div className="strategy-page"><section className="workspace-panel algorithm-completed" aria-live="polite">Loading strategy…</section></div>
   if (loadError) return <div className="strategy-page"><section className="workspace-panel algorithm-completed" role="alert"><h2>Strategy could not be loaded.</h2><p>{loadError}</p><button className="outline-button" onClick={() => window.location.reload()}>Reload workspace</button></section></div>
 
   return <div className="strategy-page">
@@ -36,7 +36,7 @@ export function Strategy({ onGenerateDocument, onAskAI }: Props) {
       <div className="project-title-row">
         <div className="strategy-project-icon"><Layers3 size={19} /></div>
         <div className="project-title-copy"><label className="eyebrow" htmlFor="strategy-name">STRATEGY NAME</label><input id="strategy-name" className="strategy-name-input" required maxLength={120} value={strategy.name} onChange={(event) => updateStrategy((current) => ({ ...current, name: event.target.value || 'Untitled Strategy' }))} /><p>{strategy.description || 'Build a strategy from your current state, goals and available options.'}</p></div>
-        <div className="project-header-meta"><button className="outline-button" onClick={() => onAskAI('Help me answer the current Strategy Algorithm step.')}>Ask AI</button><span className="status-pill"><i /> {strategy.completed ? 'Strategy completed' : 'In progress'}</span><span className="updated-label"><Clock3 size={12} /> {saveState === 'saving' ? 'Saving to cloud…' : saveState === 'saved' ? 'Saved to cloud' : saveState === 'error' ? 'Not saved' : 'Cloud save pending'}</span></div>
+        <div className="project-header-meta"><button className="outline-button" onClick={() => onAskAI('Help me answer the current Strategy Algorithm step.')}>Ask AI</button><span className="status-pill"><i /> {strategy.completed ? 'Strategy completed' : 'In progress'}</span><span className="updated-label"><Clock3 size={12} /> {saveState === 'saving' ? 'Saving in browser…' : saveState === 'saved' ? 'Saved in browser' : saveState === 'error' ? 'Not saved' : 'Browser save pending'}</span></div>
       </div>
       <div className="strategy-library-actions">
         <label className="strategy-selector-label" htmlFor="strategy-selector">STRATEGY LIBRARY</label>

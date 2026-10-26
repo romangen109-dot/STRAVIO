@@ -3,7 +3,7 @@ import type { PlanningTask, StrategyStagePlan } from '../../types'
 import { createPlanningTask, createPlanningTaskRecords, deletePlanningTask, getPlanningTasks, updatePlanningTask } from '../../data/taskService'
 import { useCurrentUser } from '../auth/UserContext'
 import { PLANNING_TASKS_CHANGED_EVENT } from '../../data/planningTasks'
-import { logClientError } from '../../data/errorHandling'
+import { logClientError, userFacingError } from '../../data/errorHandling'
 
 export type NewPlanningTask = Omit<PlanningTask, 'id' | 'createdAt' | 'userId'>
 
@@ -23,7 +23,7 @@ export function usePlanningTasks() {
       setError('')
     } catch (loadError) {
       logClientError('load Planning tasks', loadError)
-      setLoadError('Could not load Planning tasks. Please check the connection and try again.')
+      setLoadError(userFacingError(loadError, 'Could not load Planning tasks. Please try again.'))
     } finally {
       setLoading(false)
     }
@@ -45,7 +45,7 @@ export function usePlanningTasks() {
       return true
     } catch (saveError) {
       logClientError('create Planning task', saveError)
-      setError('Task was not created. Please check the connection and try again.')
+      setError(userFacingError(saveError, 'Task was not created. Please try again.'))
       return false
     } finally {
       setSaving(false)
@@ -62,7 +62,7 @@ export function usePlanningTasks() {
       return true
     } catch (saveError) {
       logClientError('update Planning task', saveError)
-      setError('Task was not updated. Please check the connection and try again.')
+      setError(userFacingError(saveError, 'Task was not updated. Please try again.'))
       return false
     } finally {
       setSaving(false)
@@ -79,7 +79,7 @@ export function usePlanningTasks() {
       return true
     } catch (saveError) {
       logClientError('delete Planning task', saveError)
-      setError('Task was not deleted. Please check the connection and try again.')
+      setError(userFacingError(saveError, 'Task was not deleted. Please try again.'))
       return false
     } finally {
       setSaving(false)
@@ -109,7 +109,7 @@ export function usePlanningTasks() {
       return created.length
     } catch (saveError) {
       logClientError('create tasks from Stage Plans', saveError)
-      setError('Tasks were not created. Please check the connection and try again.')
+      setError(userFacingError(saveError, 'Tasks were not created. Please try again.'))
       return 0
     } finally {
       setSaving(false)

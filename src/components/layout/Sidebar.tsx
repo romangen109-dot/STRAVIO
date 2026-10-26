@@ -26,7 +26,7 @@ export function Sidebar({ activeSection, onNavigate, onCollapse }: Props) {
       {workspaceOpen && <>
         <div className="project-summary">
           <p>{user.email}</p>
-          <span className="status-pill"><i /> Supabase account</span>
+          <span className="status-pill"><i /> Local profile</span>
         </div>
         <div className="sidebar-nav-label">WORKSPACE</div>
         <nav className="workspace-nav" aria-label="Workspace navigation">

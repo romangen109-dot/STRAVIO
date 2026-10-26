@@ -1,9 +1,9 @@
-import { AuthError, type AuthChangeEvent, type User as SupabaseUser } from '@supabase/supabase-js'
+import type { AuthChangeEvent } from '@supabase/supabase-js'
 import type { User } from '../types'
-import { isSupabaseConfigured, requireSupabase } from './supabaseClient'
-import { logClientError } from './errorHandling'
+import { migrateLegacyUserData } from './storage'
+import { readLocalWorkspace, updateLocalWorkspace } from './localWorkspace'
 
-export type AuthResult = { user: User } | { error: string } | { redirecting: true } | { confirmationRequired: true }
+export type AuthResult = { user: User; notice?: string } | { error: string } | { redirecting: true } | { confirmationRequired: true }
 export type PasswordResetResult = { sent: true } | { error: string }
 
 export interface AuthProvider {
@@ -18,147 +18,128 @@ export interface AuthProvider {
   logout(): Promise<void>
 }
 
-function toAppUser(user: SupabaseUser): User {
-  return {
-    id: user.id,
-    name: typeof user.user_metadata?.name === 'string' ? user.user_metadata.name : user.email ?? '',
-    email: user.email ?? '',
+const demoSessionKey = 'stravio.demo-session.v1'
+const listeners = new Set<(user: User | null, event: AuthChangeEvent) => void>()
+
+function readSession() {
+  let serialized: string | null
+  try {
+    serialized = window.localStorage.getItem(demoSessionKey)
+  } catch (error) {
+    throw new Error(`Could not read the local profile session. Check browser storage permissions. ${error instanceof Error ? error.message : ''}`.trim())
+  }
+  if (serialized === null) return null
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(serialized)
+  } catch {
+    throw new Error('The local profile session is unreadable and was left untouched.')
+  }
+  if (typeof parsed !== 'object' || parsed === null || !('userId' in parsed) || typeof parsed.userId !== 'string') {
+    throw new Error('The local profile session has an unsupported format and was left untouched.')
+  }
+  return parsed.userId
+}
+
+function saveSession(userId: string) {
+  try {
+    window.localStorage.setItem(demoSessionKey, JSON.stringify({ userId }))
+  } catch (error) {
+    const full = error instanceof DOMException && (error.name === 'QuotaExceededError' || error.name === 'NS_ERROR_DOM_QUOTA_REACHED')
+    throw new Error(full
+      ? 'Browser storage is full. Free some space and try again.'
+      : `Could not save the local profile session. Check browser storage permissions. ${error instanceof Error ? error.message : ''}`.trim())
   }
 }
 
-function authErrorMessage(error: AuthError) {
-  const code = error.code ?? ''
-  if (code === 'invalid_credentials') return 'Email or password is incorrect. If you have not confirmed your email, check your inbox first.'
-  if (code === 'email_not_confirmed') return 'Confirm your email using the link we sent, then sign in.'
-  if (code === 'weak_password' || code === 'password_too_short') return 'Choose a stronger password and try again.'
-  if (code === 'over_request_rate_limit' || code === 'over_email_send_rate_limit' || code === 'too_many_requests') return 'Too many attempts. Wait a moment and try again.'
-  if (code === 'user_already_exists' || code === 'email_exists') return 'An account with this email may already exist. Try signing in or reset its password.'
-  if (code === 'email_address_invalid' || code === 'validation_failed') return 'Enter a valid email address and check the required fields.'
-  if (code === 'same_password') return 'Choose a password different from your current password.'
-  if (code === 'otp_expired') return 'This recovery link has expired. Request a new password reset email.'
-  logClientError('Supabase authentication', error)
-  return 'Authentication failed. Check your details and try again.'
+function toUser(userId: string) {
+  const workspace = readLocalWorkspace(userId)
+  if (!workspace.profile || typeof workspace.profile.name !== 'string' || typeof workspace.profile.email !== 'string') {
+    throw new Error('The local profile could not be loaded. Its workspace data was left untouched.')
+  }
+  return { id: userId, ...workspace.profile }
 }
 
-export const supabaseAuthProvider: AuthProvider = {
+function emit(user: User | null, event: AuthChangeEvent) {
+  for (const listener of listeners) listener(user, event)
+}
+
+function normalizeIdentity(identity: string) {
+  return identity.trim().toLowerCase()
+}
+
+async function enterProfile(identity: string, password: string, requestedName?: string): Promise<AuthResult> {
+  const normalizedIdentity = normalizeIdentity(identity)
+  if (!normalizedIdentity || !password) return { error: 'Enter a login and password to continue.' }
+  const userId = `demo:${encodeURIComponent(normalizedIdentity)}`
+  const displayName = requestedName?.trim() || normalizedIdentity.split('@')[0]
+  const user: User = { id: userId, name: displayName, email: normalizedIdentity }
+  const migration = migrateLegacyUserData(user)
+  if (!migration.complete && !migration.notice?.includes('belongs to a different local account')) {
+    throw new Error(migration.notice ?? 'Existing browser data could not be safely prepared for this local profile.')
+  }
+  updateLocalWorkspace(userId, (workspace) => {
+    workspace.profile = {
+      name: requestedName?.trim() || workspace.profile?.name || displayName,
+      email: normalizedIdentity,
+    }
+  })
+  saveSession(userId)
+  const currentUser = toUser(userId)
+  emit(currentUser, 'SIGNED_IN')
+  return { user: currentUser, notice: migration.notice }
+}
+
+export const demoAuthProvider: AuthProvider = {
   async getCurrentUser() {
-    if (!isSupabaseConfigured) return null
-    const { data, error } = await requireSupabase().auth.getUser()
-    if (error && error.name !== 'AuthSessionMissingError') throw error
-    return data.user ? toAppUser(data.user) : null
+    const userId = readSession()
+    return userId ? toUser(userId) : null
   },
 
   subscribe(listener) {
-    if (!isSupabaseConfigured) return () => undefined
-    const { data } = requireSupabase().auth.onAuthStateChange((event, session) => {
-      listener(session?.user ? toAppUser(session.user) : null, event)
-    })
-    return () => data.subscription.unsubscribe()
+    listeners.add(listener)
+    return () => listeners.delete(listener)
   },
 
   async register(name, email, password) {
-    if (!isSupabaseConfigured) return { error: 'Backend is not configured. Add the Supabase URL and public key to .env.' }
-    try {
-      const { data, error } = await requireSupabase().auth.signUp({
-        email: email.trim().toLowerCase(),
-        password,
-        options: {
-          data: { name: name.trim() },
-          emailRedirectTo: new URL('/', window.location.origin).toString(),
-        },
-      })
-      if (error) return { error: authErrorMessage(error) }
-      if (!data.user) return { error: 'Account creation did not return a user.' }
-      if (!data.session) {
-        if (data.user.identities?.length === 0) return { error: 'An account with this email may already exist. Try signing in or reset its password.' }
-        return { confirmationRequired: true }
-      }
-      return { user: toAppUser(data.user) }
-    } catch (error) {
-      logClientError('create account', error)
-      return { error: 'Could not create the account. Please try again.' }
-    }
+    return enterProfile(email, password, name)
   },
 
   async login(email, password) {
-    if (!isSupabaseConfigured) return { error: 'Backend is not configured. Add the Supabase URL and public key to .env.' }
-    try {
-      const { data, error } = await requireSupabase().auth.signInWithPassword({ email: email.trim().toLowerCase(), password })
-      if (error) return { error: authErrorMessage(error) }
-      if (!data.user) return { error: 'Sign in did not return a user.' }
-      return { user: toAppUser(data.user) }
-    } catch (error) {
-      logClientError('sign in', error)
-      return { error: 'Could not sign in. Please check the connection and try again.' }
-    }
+    return enterProfile(email, password)
   },
 
-  async requestPasswordReset(email) {
-    if (!isSupabaseConfigured) return { error: 'Backend is not configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to the environment.' }
-    try {
-      const { error } = await requireSupabase().auth.resetPasswordForEmail(email.trim().toLowerCase(), {
-        redirectTo: new URL('/?flow=recovery', window.location.origin).toString(),
-      })
-      if (error) return { error: authErrorMessage(error) }
-      return { sent: true }
-    } catch (error) {
-      logClientError('request password reset', error)
-      return { error: 'Could not send a password reset email. Please try again.' }
-    }
+  async requestPasswordReset() {
+    return { error: 'Password reset emails are unavailable in local Demo Mode. No password is stored; enter the same profile name and any non-empty password to continue.' }
   },
 
-  async updatePassword(password) {
-    if (!isSupabaseConfigured) throw new Error('Backend is not configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to the environment.')
-    try {
-      const { data, error } = await requireSupabase().auth.updateUser({ password })
-      if (error) throw error
-      if (!data.user) throw new Error('Password update did not return an authenticated user.')
-      return toAppUser(data.user)
-    } catch (error) {
-      if (error instanceof AuthError) {
-        logClientError('update password', error)
-        throw new Error(authErrorMessage(error))
-      }
-      logClientError('update password', error)
-      throw new Error('Could not update your password. Request a new recovery email and try again.')
-    }
+  async updatePassword() {
+    throw new Error('Password changes are unavailable in local Demo Mode because passwords are not stored.')
   },
 
   async updateProfile(userId, name) {
     const normalizedName = name.trim()
     if (!normalizedName) throw new Error('A profile name is required.')
-    const client = requireSupabase()
-    const { data: authData, error: authError } = await client.auth.updateUser({ data: { name: normalizedName } })
-    if (authError) throw authError
-    if (!authData.user || authData.user.id !== userId) throw new Error('The authenticated profile could not be updated.')
-    const { error: profileError } = await client.from('profiles').upsert({ id: userId, display_name: normalizedName }, { onConflict: 'id' })
-    if (profileError) throw profileError
-    return toAppUser(authData.user)
+    if (readSession() !== userId) throw new Error('The local profile session has changed. Sign in again before editing this profile.')
+    updateLocalWorkspace(userId, (workspace) => {
+      if (!workspace.profile) throw new Error('The local profile could not be loaded.')
+      workspace.profile = { ...workspace.profile, name: normalizedName }
+    })
+    const user = toUser(userId)
+    emit(user, 'USER_UPDATED')
+    return user
   },
 
   async continueWithGoogle() {
-    if (!isSupabaseConfigured) return { error: 'Backend is not configured. Add the Supabase URL and public key to .env.' }
-    try {
-      const { error } = await requireSupabase().auth.signInWithOAuth({
-        provider: 'google',
-        options: { redirectTo: new URL('/', window.location.origin).toString() },
-      })
-      if (error) {
-        logClientError('start Google OAuth', error)
-        return { error: 'Google sign in could not be started. Please try again.' }
-      }
-      return { redirecting: true }
-    } catch (error) {
-      logClientError('start Google OAuth', error)
-      return { error: 'Google sign in could not be started. Please try again.' }
-    }
+    return { error: 'Google OAuth is unavailable in temporary local Demo Mode. Use the login field and any non-empty password to open a local profile.' }
   },
 
   async logout() {
-    const { error } = await requireSupabase().auth.signOut()
-    if (error) {
-      logClientError('sign out', error)
-      throw new Error('Could not end the secure session. Please try again.')
+    try {
+      window.localStorage.removeItem(demoSessionKey)
+    } catch (error) {
+      throw new Error(`Could not end the local profile session. Check browser storage permissions. ${error instanceof Error ? error.message : ''}`.trim())
     }
+    emit(null, 'SIGNED_OUT')
   },
 }

@@ -1,6 +1,6 @@
 import type { User } from '../types'
 
-export type UserDataCollection = 'strategy' | 'documents' | 'tasks' | 'ai-history' | 'activity' | 'files' | 'active-strategy' | 'migration'
+export type UserDataCollection = 'strategy' | 'strategies' | 'documents' | 'tasks' | 'ai-history' | 'activity' | 'files' | 'active-strategy' | 'migration' | 'workspace'
 export const USER_DATA_CLEARED_EVENT = 'stravio:user-data-cleared'
 
 export interface DataProvider {
@@ -13,21 +13,37 @@ export function userDataStorageKey(userId: string, collection: UserDataCollectio
   return `stravio:user:${encodeURIComponent(userId)}:${collection}.v1`
 }
 
+function localStorageError(action: 'read' | 'save', error: unknown) {
+  if (typeof DOMException !== 'undefined' && error instanceof DOMException && (error.name === 'QuotaExceededError' || error.name === 'NS_ERROR_DOM_QUOTA_REACHED')) {
+    return new Error('Browser storage is full. Free some space in this browser and try again.')
+  }
+  const reason = error instanceof Error ? error.message : 'Browser storage is unavailable.'
+  return new Error(`Could not ${action} local workspace data. Check browser storage permissions and try again. ${reason}`)
+}
+
 export const localStorageDataProvider: DataProvider = {
   get<T>(userId: string, collection: UserDataCollection) {
+    let stored: string | null
     try {
-      const stored = window.localStorage.getItem(userDataStorageKey(userId, collection))
-      return stored === null ? undefined : JSON.parse(stored) as T
-    } catch {
-      return undefined
+      stored = window.localStorage.getItem(userDataStorageKey(userId, collection))
+    } catch (error) {
+      throw localStorageError('read', error)
+    }
+    if (stored === null) return undefined
+    try {
+      return JSON.parse(stored) as T
+    } catch (error) {
+      throw new Error(`Saved ${collection} data is unreadable and was left untouched. ${error instanceof Error ? error.message : ''}`.trim())
     }
   },
   set<T>(userId: string, collection: UserDataCollection, value: T) {
     try {
-      window.localStorage.setItem(userDataStorageKey(userId, collection), JSON.stringify(value))
+      const serialized = JSON.stringify(value)
+      if (serialized === undefined) throw new Error('The data could not be serialized.')
+      window.localStorage.setItem(userDataStorageKey(userId, collection), serialized)
       return true
-    } catch {
-      return false
+    } catch (error) {
+      throw localStorageError('save', error)
     }
   },
   removeUserData(userId: string) {
@@ -37,6 +53,7 @@ export const localStorageDataProvider: DataProvider = {
       const key = window.localStorage.key(index)
       if (key?.startsWith(prefix) && !key.endsWith(':migration.v1')) keys.push(key)
     }
+
     keys.forEach((key) => window.localStorage.removeItem(key))
     localStorageDataProvider.set(userId, 'migration', { complete: true, foundLegacyData: true, clearedAt: new Date().toISOString() })
     window.dispatchEvent(new Event(USER_DATA_CLEARED_EVENT))

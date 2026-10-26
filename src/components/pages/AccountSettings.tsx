@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { HardDrive, LogOut, Save, ShieldCheck, UserRound } from 'lucide-react'
 import type { User } from '../../types'
 import { getLocalImportPreview, importLocalWorkspace } from '../../data/migrationService'
-import { logClientError } from '../../data/errorHandling'
+import { logClientError, userFacingError } from '../../data/errorHandling'
 
 type Props = {
   user: User
@@ -30,9 +30,9 @@ export function AccountSettings({ user, migrationNotice, onSaveName, onLogout }:
       const success = await onSaveName(name)
       setSaved(success)
       setError(success ? '' : 'Could not save the profile name.')
-    } catch {
+    } catch (saveError) {
       setSaved(false)
-      setError('Could not save the profile name.')
+      setError(userFacingError(saveError, 'Could not save the profile name.'))
     } finally {
       setSaving(false)
     }
@@ -57,15 +57,15 @@ export function AccountSettings({ user, migrationNotice, onSaveName, onLogout }:
     try {
       await onLogout()
     } catch (logoutError) {
-      logClientError('end cloud session', logoutError)
-      setError('Could not end the secure session. Please try again.')
+      logClientError('end local profile session', logoutError)
+      setError(logoutError instanceof Error ? logoutError.message : 'Could not end the local profile session. Please try again.')
       setLoggingOut(false)
     }
   }
 
   return <div className="secondary-page account-settings-page">
     <div className="page-crumb"><span>ACCOUNT</span><span>›</span><span>SETTINGS</span></div>
-    <div className="secondary-heading"><div><span className="eyebrow">CLOUD ACCOUNT <i /> USER-SCOPED DATA</span><h1>Settings</h1><p>Manage your Stravio profile and cloud workspace data.</p></div></div>
+    <div className="secondary-heading"><div><span className="eyebrow">LOCAL PROFILE <i /> BROWSER-STORED DATA</span><h1>Settings</h1><p>Manage your Stravio profile and local workspace data.</p></div></div>
     <div className="account-settings-grid">
       <section className="workspace-panel account-settings-panel">
         <div className="account-section-heading"><span className="account-section-icon"><UserRound size={15} /></span><div><span className="eyebrow">PROFILE</span><h2>Your profile</h2></div></div>
@@ -77,9 +77,9 @@ export function AccountSettings({ user, migrationNotice, onSaveName, onLogout }:
       </section>
 
       <section className="workspace-panel account-settings-panel">
-        <div className="account-section-heading"><span className="account-section-icon account-storage-icon"><HardDrive size={15} /></span><div><span className="eyebrow">DATABASE</span><h2>Cloud workspace</h2></div></div>
-        <div className="account-storage-status"><span className="account-storage-dot" /><div><strong>Authenticated cloud session</strong><small>Strategies, documents, Planning, AI history and activity use the connected database.</small></div><span className="account-local-badge">CLOUD</span></div>
-        <p className="account-storage-description">Import existing browser data only after signing into the matching cloud account. The import is user-scoped, repeatable and never removes its local source.</p>
+        <div className="account-section-heading"><span className="account-section-icon account-storage-icon"><HardDrive size={15} /></span><div><span className="eyebrow">BROWSER STORAGE</span><h2>Local workspace</h2></div></div>
+        <div className="account-storage-status"><span className="account-storage-dot" /><div><strong>Local profile session</strong><small>Strategies, documents, Planning, AI history and activity are stored in this browser.</small></div><span className="account-local-badge">LOCAL</span></div>
+        <p className="account-storage-description">Import existing browser records into this local profile. The import is profile-scoped, repeatable and never removes its local source.</p>
         {importPreview.localAccountFound ? <div className="account-migration-notice"><ShieldCheck size={14} /><span>Found {importPreview.counts.strategies} strategies, {importPreview.counts.documents} documents, {importPreview.counts.tasks} tasks, {importPreview.counts.messages} AI messages and {importPreview.counts.activity} activity entries.</span></div> : <p className="account-storage-description">No local account with this email was found in this browser.</p>}
         {importNotice && <div className="account-migration-notice" role="status">{importNotice}</div>}
         {importPreview.localAccountFound && <button className="outline-button algorithm-primary" onClick={() => void importLocalData()} disabled={importState === 'importing' || importState === 'complete'}><ShieldCheck size={13} /> {importState === 'importing' ? 'Importing…' : importState === 'complete' ? 'Import complete' : 'Import local data'}</button>}
@@ -88,7 +88,7 @@ export function AccountSettings({ user, migrationNotice, onSaveName, onLogout }:
 
       <section className="workspace-panel account-settings-panel account-security-panel">
         <div className="account-section-heading"><span className="account-section-icon"><ShieldCheck size={15} /></span><div><span className="eyebrow">ACCOUNT</span><h2>Session</h2></div></div>
-        <p className="account-storage-description">You are signed in as <strong>{user.name}</strong>. Signing out ends the Supabase session; cloud data remains in the database.</p>
+        <p className="account-storage-description">You are using the local profile <strong>{user.name}</strong>. Signing out ends this browser session; saved workspace data remains in this browser.</p>
         <button className="outline-button account-logout-button" onClick={() => void logout()} disabled={loggingOut}><LogOut size={14} /> {loggingOut ? 'Signing out…' : 'Log out'}</button>
       </section>
 

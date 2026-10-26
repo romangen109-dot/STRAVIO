@@ -21,7 +21,7 @@ export function AgentMessage({ content, proposal, onApplyProposal, onSetProposal
     setBusy(true)
     if (!await onApplyProposal(proposal)) {
       applyingProposalIds.current.delete(proposal.id)
-      setProposalError('The change was not applied. Check the cloud connection and current strategy, then try again.')
+      setProposalError('The change was not applied. Check browser storage and the current strategy, then try again.')
       setBusy(false)
       return
     }

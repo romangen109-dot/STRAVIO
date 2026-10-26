@@ -116,7 +116,7 @@ export function Planning({ strategyOverride, onCreateStrategy, onAskAI }: Props)
     <div className="page-crumb"><span>PROJECT</span><span>›</span><span>PLANNING</span></div>
     <div className="secondary-heading planning-page-heading">
       <div><span className="eyebrow">STRATEGY EXECUTION <i /> {strategyStarted ? 'ACTIVE PLAN' : 'WAITING FOR STRATEGY'}</span><h1>Planning</h1><p>{strategyStarted ? 'Translate strategic decisions into coordinated execution.' : 'Prepare a plan for the active strategy.'}</p></div>
-      {strategyStarted && <div className="planning-heading-actions">{saving && <span className="eyebrow" role="status">SAVING TO CLOUD…</span>}<button className="outline-button" onClick={() => onAskAI('Analyze my tasks and identify the most important next actions.')}>Ask AI</button><button className="outline-button algorithm-primary" onClick={() => openCreate()} disabled={saving}><Plus size={14} /> Add Task</button></div>}
+      {strategyStarted && <div className="planning-heading-actions">{saving && <span className="eyebrow" role="status">SAVING IN BROWSER…</span>}<button className="outline-button" onClick={() => onAskAI('Analyze my tasks and identify the most important next actions.')}>Ask AI</button><button className="outline-button algorithm-primary" onClick={() => openCreate()} disabled={saving}><Plus size={14} /> Add Task</button></div>}
     </div>
     {error && <div className="auth-error" role="alert">Planning changes were not saved: {error}</div>}
 

@@ -98,7 +98,7 @@ export function AIAgent({ onClose, getContext, initialPrompt, onPromptHandled, o
       const response = await requestAgentResponse(requestContext, prompt)
       setAIConnected(response.connected)
       setChats((current) => ({ ...current, [requestStrategyId]: (current[requestStrategyId] ?? []).map((message) => message.id === pendingUserMessage.id ? response.userMessage : message) }))
-      setJob((current) => current?.id === currentJobId ? { ...current, title: response.connected ? 'Server-side AI analysis' : 'AI provider not connected', result: response.message.content, proposal: response.message.proposal, status: 'analyzing' } : current)
+      setJob((current) => current?.id === currentJobId ? { ...current, title: response.connected ? 'Server-side AI analysis' : 'AI provider not connected', result: response.message.content, proposal: response.message.proposal, message: response.message, status: 'analyzing' } : current)
     } catch (requestError) {
       logClientError('AI request', requestError)
       try {
@@ -135,7 +135,7 @@ export function AIAgent({ onClose, getContext, initialPrompt, onPromptHandled, o
     if (job.status === 'completed' && processedJobId.current !== job.id) {
       processedJobId.current = job.id
       const responseStrategyId = job.strategyId ?? strategyId
-      appendMessage(responseStrategyId, createMessage(user.id, responseStrategyId, 'agent', job.result, job.proposal))
+      appendMessage(responseStrategyId, job.message ?? createMessage(user.id, responseStrategyId, 'agent', job.result, job.proposal))
       setJob(null)
     }
   }, [job, strategyId, user.id])
@@ -157,13 +157,13 @@ export function AIAgent({ onClose, getContext, initialPrompt, onPromptHandled, o
   const updateProposal = (messageId: string, status: AgentProposalStatus) => setChats((current) => ({ ...current, [strategyId]: (current[strategyId] ?? []).map((message) => message.id === messageId && message.proposal ? { ...message, proposal: { ...message.proposal, status } } : message) }))
 
   const setProposalStatus = async (message: AgentMessage, status: AgentProposalStatus) => {
-    if (status === 'cancelled') await resolveAgentProposal(strategyId, message.id, 'cancel')
+    if (status === 'cancelled') await resolveAgentProposal(user.id, strategyId, message.id, 'cancel')
     updateProposal(message.id, status)
   }
 
   const applyProposal = async (message: AgentMessage, proposal: AgentProposal) => {
     if (!await onApplyProposal(message.id, proposal)) {
-      setProviderError('The change was not applied. Check the cloud connection and current strategy, then try again.')
+      setProviderError('The change was not applied. Check browser storage and the current strategy, then try again.')
       return false
     }
     updateProposal(message.id, 'applied')

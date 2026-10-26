@@ -1,11 +1,9 @@
-import type { StrategyData } from '../types'
+import type { AgentMessage, StrategyActivity, StrategyData, StrategyDocument } from '../types'
 import { localStorageDataProvider } from './storage'
-import type { Json } from './database.types'
-import { requireSupabase } from './supabaseClient'
+import { updateLocalWorkspace } from './localWorkspace'
 import { getStrategies } from './strategyService'
 import { PLANNING_TASKS_CHANGED_EVENT } from './planningTasks'
 import { invalidatePlanningTaskCache } from './taskService'
-import { logClientError } from './errorHandling'
 
 type JsonRecord = Record<string, unknown>
 type ImportPayload = {
@@ -168,16 +166,79 @@ export function getLocalImportPreview(email: string, userId: string): LocalImpor
 
 export async function importLocalWorkspace(email: string, userId: string) {
   const payload = buildImportPayload(email, userId)
-  const normalizedPayload = JSON.parse(JSON.stringify(payload)) as Json
-  const { data, error } = await requireSupabase().rpc('import_local_workspace', { payload: normalizedPayload })
-  if (error) {
-    logClientError('import local workspace', error)
-    throw new Error('Local data could not be imported. Please check the connection and try again.')
-  }
+  const counts = { strategies: 0, documents: 0, tasks: 0, messages: 0, activity: 0 }
+  updateLocalWorkspace(userId, (workspace) => {
+    for (const row of payload.strategies) {
+      const data = row.data
+      if (!isRecord(data) || typeof data.id !== 'string' || workspace.strategies.some((entry) => entry.id === data.id)) continue
+      workspace.strategies.push(data as unknown as StrategyData)
+      counts.strategies += 1
+    }
+    for (const row of payload.documents) {
+      if (!isRecord(row.strategy_snapshot) || typeof row.id !== 'string' || workspace.documents.some((entry) => entry.id === row.id)) continue
+      workspace.documents.push({
+        id: row.id,
+        userId,
+        title: typeof row.title === 'string' ? row.title : 'Untitled Strategy',
+        content: typeof row.content === 'string' ? row.content : '',
+        status: row.status === 'edited' ? 'edited' : 'ready',
+        strategy: row.strategy_snapshot as unknown as StrategyDocument['strategy'],
+        createdAt: typeof row.created_at === 'string' ? row.created_at : new Date().toISOString(),
+        updatedAt: typeof row.updated_at === 'string' ? row.updated_at : new Date().toISOString(),
+      })
+      counts.documents += 1
+    }
+    for (const row of payload.tasks) {
+      if (typeof row.id !== 'string' || workspace.tasks.some((entry) => entry.id === row.id)) continue
+      workspace.tasks.push({
+        id: row.id,
+        userId,
+        strategyId: String(row.strategy_id ?? ''),
+        stageId: String(row.stage_id ?? ''),
+        title: String(row.title ?? ''),
+        description: String(row.description ?? ''),
+        status: row.status === 'completed' || row.status === 'in-progress' ? row.status : 'todo',
+        priority: row.priority === 'high' || row.priority === 'low' ? row.priority : 'medium',
+        deadline: String(row.deadline ?? ''),
+        sourceStagePlanId: typeof row.source_stage_plan_id === 'string' ? row.source_stage_plan_id : undefined,
+        createdAt: typeof row.created_at === 'string' ? row.created_at : new Date().toISOString(),
+      })
+      counts.tasks += 1
+    }
+    for (const row of payload.messages) {
+      if (typeof row.id !== 'string' || typeof row.strategy_id !== 'string') continue
+      const strategyId = row.strategy_id
+      const history = workspace.chats[strategyId] ??= []
+      if (history.some((entry) => entry.id === row.id)) continue
+      history.push({
+        id: row.id,
+        userId,
+        strategyId,
+        role: row.role === 'agent' ? 'agent' : 'user',
+        content: String(row.content ?? ''),
+        createdAt: typeof row.created_at === 'string' ? row.created_at : new Date().toISOString(),
+        proposal: row.proposal as AgentMessage['proposal'],
+      })
+      counts.messages += 1
+    }
+    for (const row of payload.activity) {
+      if (typeof row.id !== 'string' || workspace.activities.some((entry) => entry.id === row.id)) continue
+      workspace.activities.push({
+        id: row.id,
+        userId,
+        type: row.type as StrategyActivity['type'],
+        title: String(row.title ?? ''),
+        createdAt: typeof row.created_at === 'string' ? row.created_at : new Date().toISOString(),
+        strategyId: typeof row.strategy_id === 'string' ? row.strategy_id : undefined,
+        documentId: typeof row.document_id === 'string' ? row.document_id : undefined,
+      })
+      counts.activity += 1
+    }
+  })
   const strategies = await getStrategies(userId)
   if (strategies[0]) window.dispatchEvent(new CustomEvent('stravio:strategy-data', { detail: strategies[0] }))
   invalidatePlanningTaskCache(userId)
   window.dispatchEvent(new Event(PLANNING_TASKS_CHANGED_EVENT))
   window.dispatchEvent(new Event('stravio:workspace-refresh'))
-  return data as LocalImportPreview['counts']
+  return counts
 }

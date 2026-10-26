@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { StrategyData } from '../../types'
 import { createInitialStrategy } from '../../data/strategyAlgorithm'
-import { logClientError } from '../../data/errorHandling'
+import { logClientError, userFacingError } from '../../data/errorHandling'
 import { createStrategy as persistNewStrategy, deleteStrategy as removeStrategy, getCachedActiveStrategy, getStrategies, selectActiveStrategy, updateStrategy as persistStrategy } from '../../data/strategyService'
 import { useCurrentUser } from '../auth/UserContext'
 
@@ -98,7 +98,7 @@ export function useStrategy() {
       window.dispatchEvent(new CustomEvent(STRATEGY_DATA_EVENT, { detail: loaded }))
     }).catch((loadError: unknown) => {
       logClientError('load strategy', loadError)
-      if (active) setLoadError('Could not load your strategy. Please check the connection and try again.')
+      if (active) setLoadError(userFacingError(loadError, 'Could not load your strategy. Please try again.'))
     }).finally(() => {
       if (active) setLoading(false)
     })
@@ -123,7 +123,7 @@ export function useStrategy() {
         if (!active) return
         logClientError('save strategy', saveError)
         setSaveState('error')
-        setError('Strategy was not saved. Please check the connection and try again.')
+        setError(userFacingError(saveError, 'Strategy was not saved. Please try again.'))
       })
     }, 500)
     return () => { active = false; window.clearTimeout(timer) }
@@ -173,7 +173,7 @@ export function useStrategy() {
       return true
     } catch (createError) {
       logClientError('create strategy', createError)
-      setError('Strategy was not created. Please check the connection and try again.')
+      setError(userFacingError(createError, 'Strategy was not created. Please try again.'))
       return false
     }
   }
@@ -192,7 +192,7 @@ export function useStrategy() {
       return true
     } catch (deleteError) {
       logClientError('delete strategy', deleteError)
-      setError('Strategy was not deleted. Please check the connection and try again.')
+      setError(userFacingError(deleteError, 'Strategy was not deleted. Please try again.'))
       return false
     }
   }
