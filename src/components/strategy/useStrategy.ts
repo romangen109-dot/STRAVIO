@@ -2,7 +2,9 @@ import { useEffect, useRef, useState } from 'react'
 import type { StrategyData } from '../../types'
 import { createInitialStrategy } from '../../data/strategyAlgorithm'
 import { logClientError, userFacingError } from '../../data/errorHandling'
+import { PLANNING_TASKS_CHANGED_EVENT } from '../../data/planningTasks'
 import { createStrategy as persistNewStrategy, deleteStrategy as removeStrategy, getCachedActiveStrategy, getStrategies, selectActiveStrategy, updateStrategy as persistStrategy } from '../../data/strategyService'
+import { readLocalWorkspace } from '../../data/localWorkspace'
 import { useCurrentUser } from '../auth/UserContext'
 
 export const STRATEGY_DATA_EVENT = 'stravio:strategy-data'
@@ -82,7 +84,12 @@ export function useStrategy() {
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const [loadError, setLoadError] = useState('')
   const [error, setError] = useState('')
-  const lastSaved = useRef('')
+  const strategyRef = useRef(strategy)
+  const persistedStrategy = useRef(strategy)
+  const saveVersion = useRef(0)
+  const persistedVersion = useRef(0)
+  const strategySyncTimer = useRef<number | null>(null)
+  const pendingStrategySync = useRef(false)
 
   useEffect(() => {
     let active = true
@@ -91,7 +98,9 @@ export function useStrategy() {
       if (!active) return
       const loaded = strategies[0] ?? createInitialStrategy(user.id)
       setStrategies(strategies)
-      lastSaved.current = JSON.stringify(loaded)
+      strategyRef.current = loaded
+      persistedStrategy.current = loaded
+      persistedVersion.current = saveVersion.current
       setStrategy(loaded)
       setLoadError('')
       setError('')
@@ -106,68 +115,94 @@ export function useStrategy() {
   }, [user.id])
 
   useEffect(() => {
-    if (loading || (!hasStrategyProgress(strategy) && !strategies.some((entry) => entry.id === strategy.id))) return
-    const serialized = JSON.stringify(strategy)
-    if (serialized === lastSaved.current) return
-    let active = true
-    setSaveState('idle')
-    const timer = window.setTimeout(() => {
-      setSaveState('saving')
-      void saveStrategyData(strategy).then((saved) => {
-        if (!active) return
-        lastSaved.current = JSON.stringify(saved)
-        setStrategies((current) => [saved, ...current.filter((entry) => entry.id !== saved.id)])
-        setSaveState('saved')
-        setError('')
-      }).catch((saveError: unknown) => {
-        if (!active) return
-        logClientError('save strategy', saveError)
-        setSaveState('error')
-        setError(userFacingError(saveError, 'Strategy was not saved. Please try again.'))
-      })
-    }, 500)
-    return () => { active = false; window.clearTimeout(timer) }
-  }, [loading, strategy, strategies])
-
-  useEffect(() => {
     const syncStrategy = (event: Event) => {
       const stored = event instanceof CustomEvent && isStrategyData(event.detail) ? event.detail : loadStrategyData(user.id)
-      setStrategy((current) => JSON.stringify(current) === JSON.stringify(stored) ? current : stored)
-      lastSaved.current = JSON.stringify(stored)
-      setSaveState('saved')
+      persistedStrategy.current = stored
+      const hasNewerUnsavedChanges = stored.id === strategyRef.current.id && saveVersion.current > persistedVersion.current
+      if (!hasNewerUnsavedChanges) {
+        strategyRef.current = stored
+        setStrategy((current) => JSON.stringify(current) === JSON.stringify(stored) ? current : stored)
+        setSaveState('saved')
+      }
+      setStrategies((current) => current.map((entry) => entry.id === stored.id ? stored : entry))
     }
     window.addEventListener(STRATEGY_DATA_EVENT, syncStrategy)
     return () => window.removeEventListener(STRATEGY_DATA_EVENT, syncStrategy)
   }, [user.id])
 
+  const flushStrategySync = () => {
+    if (strategySyncTimer.current !== null) {
+      window.clearTimeout(strategySyncTimer.current)
+      strategySyncTimer.current = null
+    }
+    if (!pendingStrategySync.current) return
+    pendingStrategySync.current = false
+    if (persistedStrategy.current.id !== strategyRef.current.id) return
+    const persisted = readLocalWorkspace(user.id).strategies.find((entry) => entry.id === strategyRef.current.id) ?? persistedStrategy.current
+    window.dispatchEvent(new CustomEvent<StrategyData>(STRATEGY_DATA_EVENT, { detail: persisted }))
+  }
+
+  useEffect(() => () => flushStrategySync(), [user.id])
+
   const updateStrategy = (update: (current: StrategyData) => StrategyData) => {
-    setStrategy((current) => {
-      const next = update(current)
-      const now = new Date().toISOString()
-      return {
-        ...next,
-        createdAt: !hasStrategyProgress(current) && hasStrategyProgress(next) ? now : next.createdAt,
-        updatedAt: now,
+    if (loading) return
+    const current = strategyRef.current
+    const next = update(current)
+    const now = new Date().toISOString()
+    const updated = {
+      ...next,
+      createdAt: !hasStrategyProgress(current) && hasStrategyProgress(next) ? now : next.createdAt,
+      updatedAt: now,
+    }
+    strategyRef.current = updated
+    setStrategy(updated)
+    setSaveState('saving')
+    const version = ++saveVersion.current
+    void persistStrategy(updated).then((saved) => {
+      if (version >= persistedVersion.current) {
+        persistedVersion.current = version
+        persistedStrategy.current = saved
+        pendingStrategySync.current = true
+        if (strategySyncTimer.current !== null) window.clearTimeout(strategySyncTimer.current)
+        strategySyncTimer.current = window.setTimeout(flushStrategySync, 500)
       }
+      if (version !== saveVersion.current) return
+      strategyRef.current = saved
+      setStrategies((currentStrategies) => [saved, ...currentStrategies.filter((entry) => entry.id !== saved.id)])
+      setSaveState('saved')
+      setError('')
+    }).catch((saveError: unknown) => {
+      if (version !== saveVersion.current) return
+      logClientError('save strategy', saveError)
+      setSaveState('error')
+      setError(userFacingError(saveError, 'Strategy was not saved. Please try again.'))
     })
   }
 
   const chooseStrategy = (strategyId: string) => {
+    flushStrategySync()
     const selected = selectActiveStrategy(user.id, strategyId)
+    strategyRef.current = selected
+    persistedStrategy.current = selected
+    saveVersion.current += 1
+    persistedVersion.current = saveVersion.current
     setStrategy(selected)
-    lastSaved.current = JSON.stringify(selected)
     setSaveState('saved')
     setError('')
     window.dispatchEvent(new CustomEvent<StrategyData>(STRATEGY_DATA_EVENT, { detail: selected }))
   }
 
   const createNewStrategy = async () => {
+    flushStrategySync()
     setError('')
     try {
       const created = await persistNewStrategy(createInitialStrategy(user.id))
+      strategyRef.current = created
+      persistedStrategy.current = created
+      saveVersion.current += 1
+      persistedVersion.current = saveVersion.current
       setStrategies((current) => [created, ...current.filter((entry) => entry.id !== created.id)])
       setStrategy(created)
-      lastSaved.current = JSON.stringify(created)
       setSaveState('saved')
       window.dispatchEvent(new CustomEvent<StrategyData>(STRATEGY_DATA_EVENT, { detail: created }))
       return true
@@ -179,16 +214,21 @@ export function useStrategy() {
   }
 
   const deleteCurrentStrategy = async () => {
+    flushStrategySync()
     setError('')
     try {
       await removeStrategy(user.id, strategy.id)
       const remaining = strategies.filter((entry) => entry.id !== strategy.id)
       setStrategies(remaining)
       const next = remaining[0] ?? createInitialStrategy(user.id)
+      strategyRef.current = next
+      persistedStrategy.current = next
+      saveVersion.current += 1
+      persistedVersion.current = saveVersion.current
       setStrategy(next)
-      lastSaved.current = JSON.stringify(next)
       setSaveState(remaining.length ? 'saved' : 'idle')
       window.dispatchEvent(new CustomEvent<StrategyData>(STRATEGY_DATA_EVENT, { detail: next }))
+      window.dispatchEvent(new Event(PLANNING_TASKS_CHANGED_EVENT))
       return true
     } catch (deleteError) {
       logClientError('delete strategy', deleteError)

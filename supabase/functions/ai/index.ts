@@ -9,7 +9,7 @@ const corsHeaders = {
   Vary: 'Origin',
 }
 
-type RequestBody = { action?: 'respond' | 'apply' | 'cancel'; strategyId?: string; prompt?: string; activeView?: string; currentDocumentId?: string; currentDocumentContent?: string; messageId?: string }
+type RequestBody = { action?: 'respond' | 'apply' | 'cancel'; strategyId?: string; prompt?: string; activeView?: string; currentDocumentId?: string; currentDocumentContent?: string; responseLanguage?: 'ru' | 'en' | 'kk'; messageId?: string }
 
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
@@ -187,7 +187,9 @@ Deno.serve(async (request) => {
   }
 
   const priorMessages = (historyResult.data ?? []).slice(0, 8).reverse().map((message) => ({ role: message.role === 'agent' ? 'assistant' : 'user', content: text(message.content, 750) }))
-  const systemInstruction = 'You are the Stravio strategy assistant. Use only facts in the supplied JSON context. Do not invent user data. Return only JSON with shape {"content": string, "proposal": null | {"kind":"update-desired-state","previousValue":string,"proposedValue":string} | {"kind":"create-tasks","tasks":[{"stageId":string,"title":string,"description":string,"priority":"low"|"medium"|"high","deadline":string,"sourceStagePlanId":string|null}]}. Proposals are suggestions only and must never be executed automatically. Create at most 20 tasks. Do not include identifying user details.'
+  const responseLanguage = body.responseLanguage === 'en' || body.responseLanguage === 'kk' ? body.responseLanguage : 'ru'
+  const languageInstruction = responseLanguage === 'ru' ? 'Respond in Russian' : responseLanguage === 'kk' ? 'Respond in Kazakh' : 'Respond in English'
+  const systemInstruction = `You are the Stravio strategy assistant. ${languageInstruction}, unless the user explicitly requests a different response language. Use only facts in the supplied JSON context. Do not invent user data. Return only JSON with shape {"content": string, "proposal": null | {"kind":"update-desired-state","previousValue":string,"proposedValue":string} | {"kind":"create-tasks","tasks":[{"stageId":string,"title":string,"description":string,"priority":"low"|"medium"|"high","deadline":string,"sourceStagePlanId":string|null}]}. Proposals are suggestions only and must never be executed automatically. Create at most 20 tasks. Do not include identifying user details.`
   const modelEndpoint = Deno.env.get('AI_BASE_URL') ?? 'https://api.openai.com/v1/chat/completions'
   const model = Deno.env.get('AI_MODEL') ?? 'gpt-4o-mini'
   let response: Response

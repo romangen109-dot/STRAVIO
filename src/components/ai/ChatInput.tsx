@@ -1,9 +1,11 @@
 import { ArrowUp, Paperclip } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
+import { useI18n } from '../../i18n'
 
 type Props = { disabled?: boolean; onSend: (message: string) => void }
 
 export function ChatInput({ disabled, onSend }: Props) {
+  const { t } = useI18n()
   const [value, setValue] = useState('')
   const submit = (event: FormEvent) => {
     event.preventDefault()
@@ -12,7 +14,7 @@ export function ChatInput({ disabled, onSend }: Props) {
     setValue('')
   }
   return <form className="chat-input-wrap" onSubmit={submit}>
-    <textarea value={value} onChange={(event) => setValue(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); event.currentTarget.form?.requestSubmit() } }} placeholder="Задайте вопрос о проекте..." rows={2} aria-label="Сообщение AI-агенту" />
-    <div className="chat-input-footer"><button type="button" className="icon-button attach-button" title="Прикрепить контекст"><Paperclip size={14} /></button><span>Контекст проекта включён</span><button className="send-button" aria-label="Отправить сообщение" disabled={!value.trim() || disabled}><ArrowUp size={15} /></button></div>
+    <textarea value={value} onChange={(event) => setValue(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); event.currentTarget.form?.requestSubmit() } }} placeholder={t('Задайте вопрос о проекте...')} rows={2} aria-label={t('Сообщение AI-агенту')} />
+    <div className="chat-input-footer"><button type="button" className="icon-button attach-button" title={t('Прикрепить контекст')}><Paperclip size={14} /></button><span>{t('Контекст проекта включён')}</span><button className="send-button" aria-label={t('Send message')} disabled={!value.trim() || disabled}><ArrowUp size={15} /></button></div>
   </form>
 }

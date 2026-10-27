@@ -1,7 +1,9 @@
 import type { StrategyData } from '../types'
 import { createInitialStrategy } from './strategyAlgorithm'
+import { createStrategyDocumentContent } from './strategyDocument'
 import { addLocalActivity, readLocalWorkspace, updateLocalWorkspace, writeLocalWorkspace } from './localWorkspace'
 import { localStorageDataProvider } from './storage'
+import { invalidatePlanningTaskCache } from './taskService'
 
 const strategyCache = new Map<string, StrategyData[]>()
 
@@ -19,10 +21,10 @@ export async function getStrategies(userId: string) {
 }
 
 export async function getStrategy(userId: string, strategyId: string) {
-  const strategy = readLocalWorkspace(userId).strategies.find((entry) => entry.id === strategyId)
+  const workspace = readLocalWorkspace(userId)
+  const strategy = workspace.strategies.find((entry) => entry.id === strategyId)
   if (!strategy) return null
-  const cached = strategyCache.get(userId) ?? []
-  strategyCache.set(userId, [strategy, ...cached.filter((entry) => entry.id !== strategy.id)])
+  strategyCache.set(userId, orderActiveStrategy(userId, workspace.strategies, workspace.activeStrategyId))
   return strategy
 }
 
@@ -42,13 +44,16 @@ export async function createStrategy(strategy: StrategyData) {
 }
 
 export async function updateStrategy(strategy: StrategyData) {
-  const updated = updateLocalWorkspace(strategy.userId, (workspace) => {
+  const saved = updateLocalWorkspace(strategy.userId, (workspace) => {
     const index = workspace.strategies.findIndex((entry) => entry.id === strategy.id)
     const previousStrategy = workspace.strategies[index]
     if (index === -1) workspace.strategies.unshift(strategy)
     else workspace.strategies[index] = strategy
     for (const document of workspace.documents) {
-      if (document.strategy.id === strategy.id && document.status === 'ready') document.strategy = strategy
+      if (document.strategy.id !== strategy.id) continue
+      document.strategy = strategy
+      document.updatedAt = strategy.updatedAt
+      if (document.status === 'ready') document.content = createStrategyDocumentContent(strategy)
     }
     addLocalActivity(
       workspace,
@@ -57,11 +62,10 @@ export async function updateStrategy(strategy: StrategyData) {
       strategy.name,
       strategy.id,
     )
-    return strategy
+    return { updated: strategy, strategies: workspace.strategies, activeStrategyId: workspace.activeStrategyId }
   })
-  const cached = strategyCache.get(strategy.userId) ?? []
-  strategyCache.set(strategy.userId, [updated, ...cached.filter((entry) => entry.id !== updated.id)])
-  return updated
+  strategyCache.set(strategy.userId, orderActiveStrategy(strategy.userId, saved.strategies, saved.activeStrategyId))
+  return saved.updated
 }
 
 export async function deleteStrategy(userId: string, strategyId: string) {
@@ -78,6 +82,7 @@ export async function deleteStrategy(userId: string, strategyId: string) {
     return orderActiveStrategy(userId, workspace.strategies, workspace.activeStrategyId)
   })
   strategyCache.set(userId, remaining)
+  invalidatePlanningTaskCache(userId)
 }
 
 export function getCachedActiveStrategy(userId: string) {

@@ -8,7 +8,8 @@ import { Planning } from './components/pages/Planning'
 import { Strategy } from './components/strategy/Strategy'
 import { StrategyDocuments } from './components/pages/StrategyDocuments'
 import { createStrategyDocument } from './data/strategyDocument'
-import { createStrategyDocumentRecord, deleteStrategyDocumentRecord, getStrategyDocuments, renameStrategyDocumentRecord, syncStrategyDocumentRecord, updateStrategyDocumentRecord } from './data/documentService'
+import { createAgentContext } from './data/agentContext'
+import { createStrategyDocumentRecord, deleteStrategyDocumentRecord, discardStrategyDocumentDraft as discardStrategyDocumentDraftRecord, getStrategyDocuments, renameStrategyDocumentRecord, saveStrategyDocumentDraft as saveStrategyDocumentDraftRecord, syncStrategyDocumentRecord, updateStrategyDocumentRecord } from './data/documentService'
 import { PLANNING_TASKS_CHANGED_EVENT } from './data/planningTasks'
 import { resolveAgentProposal } from './data/chatService'
 import { getRecentActivity } from './data/activityService'
@@ -19,6 +20,7 @@ import { authRedirectError, isPasswordRecoveryRequested } from './data/authError
 import { logClientError, userFacingError } from './data/errorHandling'
 import { hasStrategyProgress, loadStrategyData, saveStrategyData, STRATEGY_DATA_EVENT } from './components/strategy/useStrategy'
 import type { AgentContext, AgentProposal, PlanningTask, StrategyData, StrategyDocument, StrategyActivity, User, WorkspaceSection, WorkspaceTab } from './types'
+import { useI18n } from './i18n'
 
 const initialTabs: WorkspaceTab[] = [
   { id: 'overview', label: 'Dashboard', kind: 'section', section: 'Overview' },
@@ -26,7 +28,7 @@ const initialTabs: WorkspaceTab[] = [
   { id: 'documents', label: 'Documents', kind: 'section', section: 'Documents' },
 ]
 
-class AppErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean }> {
+class AppErrorBoundary extends Component<{ children: ReactNode; t: (message: string) => string }, { hasError: boolean }> {
   state = { hasError: false }
 
   static getDerivedStateFromError() {
@@ -34,7 +36,7 @@ class AppErrorBoundary extends Component<{ children: ReactNode }, { hasError: bo
   }
 
   render() {
-    if (this.state.hasError) return <main className="auth-screen"><section className="auth-panel" role="alert"><div className="auth-heading"><span className="eyebrow">STRAVIO WORKSPACE</span><h1>Workspace couldn’t be loaded.</h1><p>Your saved local data has not been intentionally changed.</p></div><button className="auth-submit" onClick={() => window.location.reload()}>Reload workspace</button></section></main>
+    if (this.state.hasError) return <main className="auth-screen"><section className="auth-panel" role="alert"><div className="auth-heading"><span className="eyebrow">{this.props.t('STRAVIO WORKSPACE')}</span><h1>{this.props.t('Workspace couldn’t be loaded.')}</h1><p>{this.props.t('Your saved local data has not been intentionally changed.')}</p></div><button className="auth-submit" onClick={() => window.location.reload()}>{this.props.t('Reload workspace')}</button></section></main>
     return this.props.children
   }
 }
@@ -44,6 +46,7 @@ function createDocumentId() {
 }
 
 export default function App() {
+  const { t } = useI18n()
   const [currentUser, setCurrentUser] = useState<User | null>(null)
   const [authReady, setAuthReady] = useState(false)
   const [authError, setAuthError] = useState(() => authRedirectError(window.location.search, window.location.hash) ?? '')
@@ -88,16 +91,17 @@ export default function App() {
     window.history.replaceState({}, document.title, window.location.pathname)
   }
 
-  if (!authReady) return <main className="auth-screen"><section className="auth-panel"><div className="auth-heading"><span className="eyebrow">STRAVIO WORKSPACE</span><h1>Restoring local profile…</h1></div></section></main>
-  if (recoveryMode) return <AppErrorBoundary><AuthScreen onAuthenticated={onAuthenticated} onRecoveryComplete={onRecoveryComplete} initialMode="recovery" /></AppErrorBoundary>
-  if (!currentUser) return <AppErrorBoundary><AuthScreen onAuthenticated={onAuthenticated} initialError={authError} key={authError} /></AppErrorBoundary>
+  if (!authReady) return <main className="auth-screen"><section className="auth-panel"><div className="auth-heading"><span className="eyebrow">{t('STRAVIO WORKSPACE')}</span><h1>{t('Restoring local profile…')}</h1></div></section></main>
+  if (recoveryMode) return <AppErrorBoundary t={t}><AuthScreen onAuthenticated={onAuthenticated} onRecoveryComplete={onRecoveryComplete} initialMode="recovery" /></AppErrorBoundary>
+  if (!currentUser) return <AppErrorBoundary t={t}><AuthScreen onAuthenticated={onAuthenticated} initialError={authError} key={authError} /></AppErrorBoundary>
 
-  return <AppErrorBoundary><CurrentUserProvider user={currentUser}><AuthenticatedWorkspace key={currentUser.id} user={currentUser} migrationNotice={authError || undefined} onLogout={() => demoAuthProvider.logout()} onUserUpdated={setCurrentUser} /></CurrentUserProvider></AppErrorBoundary>
+  return <AppErrorBoundary t={t}><CurrentUserProvider user={currentUser}><AuthenticatedWorkspace key={currentUser.id} user={currentUser} migrationNotice={authError || undefined} onLogout={() => demoAuthProvider.logout()} onUserUpdated={setCurrentUser} /></CurrentUserProvider></AppErrorBoundary>
 }
 
 type WorkspaceProps = { user: User; migrationNotice?: string; onLogout: () => void; onUserUpdated: (user: User) => void }
 
 function AuthenticatedWorkspace({ user, migrationNotice, onLogout, onUserUpdated }: WorkspaceProps) {
+  const { language } = useI18n()
   const [strategyDocuments, setStrategyDocuments] = useState<StrategyDocument[]>([])
   const [activity, setActivity] = useState<StrategyActivity[]>([])
   const [planningTasks, setPlanningTasks] = useState<PlanningTask[]>([])
@@ -194,15 +198,16 @@ function AuthenticatedWorkspace({ user, migrationNotice, onLogout, onUserUpdated
     const strategy = (activeTab.section === 'Planning' ? planningStrategyOverride : null)
       ?? (selectedDocument?.strategy.id === savedStrategy.id ? savedStrategy : selectedDocument?.strategy ?? savedStrategy)
     const hasContext = Boolean(selectedDocument) || hasStrategyProgress(strategy)
-    return {
+    return createAgentContext({
       strategy,
       hasActiveStrategy: hasContext,
       userId: user.id,
-      tasks: hasContext ? planningTasks.filter((task) => task.strategyId === strategy.id) : [],
-      documents: strategyDocuments.filter((document) => document.strategy.id === strategy.id),
+      language,
+      tasks: planningTasks,
+      documents: strategyDocuments,
       activeView: activeTab.kind === 'section' ? activeTab.section ?? 'Workspace' : 'Documents',
       currentDocument: agentPrompt?.currentDocument ?? selectedDocument,
-    }
+    })
   }
 
   const openTab = (tab: WorkspaceTab) => {
@@ -318,6 +323,28 @@ function AuthenticatedWorkspace({ user, migrationNotice, onLogout, onUserUpdated
     }
   }
 
+  const saveDocumentDraft = async (id: string, content: string) => {
+    try {
+      const updated = await saveStrategyDocumentDraftRecord(user.id, id, content)
+      setStrategyDocuments((current) => current.map((document) => document.id === id ? updated : document))
+      return true
+    } catch (error) {
+      logClientError('save document draft', error)
+      return false
+    }
+  }
+
+  const discardDocumentDraft = async (id: string) => {
+    try {
+      const updated = await discardStrategyDocumentDraftRecord(user.id, id)
+      setStrategyDocuments((current) => current.map((document) => document.id === id ? updated : document))
+      return true
+    } catch (error) {
+      logClientError('discard document draft', error)
+      return false
+    }
+  }
+
   const renameStrategyDocument = async (id: string, title: string) => {
     if (!title.trim()) return false
     try {
@@ -338,7 +365,7 @@ function AuthenticatedWorkspace({ user, migrationNotice, onLogout, onUserUpdated
     const now = new Date().toISOString()
     if (document.userId !== user.id) return false
     try {
-      const duplicate = await createStrategyDocumentRecord({ ...document, id: createDocumentId(), title: `${document.title} (Copy)`, createdAt: now, updatedAt: now, status: 'ready', strategy: structuredClone(document.strategy) })
+      const duplicate = await createStrategyDocumentRecord({ ...document, id: createDocumentId(), title: `${document.title} (Copy)`, createdAt: now, updatedAt: now, status: 'ready', strategy: structuredClone(document.strategy), draftContent: undefined })
       setStrategyDocuments((current) => [duplicate, ...current])
       refreshRecentActivity()
       openTab({ id: `strategy-document:${duplicate.id}`, label: duplicate.title, kind: 'strategy-document', section: 'Documents', strategyDocumentId: duplicate.id })
@@ -380,6 +407,6 @@ function AuthenticatedWorkspace({ user, migrationNotice, onLogout, onUserUpdated
   const addTab = () => navigate('Documents')
 
   return <AppLayout activeSection={activeSection} tabs={tabs} activeTabId={activeTabId} query={query} agentOpen={agentOpen} agentContext={getAgentContext} agentPrompt={agentPrompt} sidebarOpen={sidebarOpen} onQueryChange={setQuery} onNavigate={navigate} onSelectTab={openTab} onCloseTab={closeTab} onAddTab={addTab} onToggleAgent={() => setAgentOpen((open) => !open)} onCloseAgent={() => setAgentOpen(false)} onAgentPromptHandled={handleAgentPrompt} onApplyAgentProposal={handleAgentProposal} onToggleSidebar={() => setSidebarOpen((open) => !open)}>
-    {activeTab.kind === 'strategy-document' ? <StrategyDocuments documents={strategyDocuments} selectedDocumentId={activeTab.strategyDocumentId} onCreate={() => void createBlankDocument()} onOpen={(document) => openTab({ id: `strategy-document:${document.id}`, label: document.title, kind: 'strategy-document', section: 'Documents', strategyDocumentId: document.id })} onSave={saveStrategyDocument} onRename={renameStrategyDocument} onDelete={deleteStrategyDocument} onDuplicate={duplicateStrategyDocument} onBack={() => navigate('Documents')} onOpenPlanning={openPlanningForStrategy} onAskAI={askAgent} /> : activeTab.section === 'Strategy' ? <Strategy onGenerateDocument={generateStrategyDocument} onAskAI={askAgent} /> : activeTab.section === 'Documents' ? <StrategyDocuments documents={strategyDocuments} onCreate={() => void createBlankDocument()} onOpen={(document) => openTab({ id: `strategy-document:${document.id}`, label: document.title, kind: 'strategy-document', section: 'Documents', strategyDocumentId: document.id })} onSave={saveStrategyDocument} onRename={renameStrategyDocument} onDelete={deleteStrategyDocument} onDuplicate={duplicateStrategyDocument} onBack={() => navigate('Documents')} onOpenPlanning={openPlanningForStrategy} onAskAI={askAgent} /> : activeTab.section === 'Overview' ? <Dashboard documents={strategyDocuments} activity={activity} migrationNotice={migrationNotice} onOpenStrategy={() => navigate('Strategy')} onOpenDocuments={() => navigate('Documents')} onOpenDocument={(document) => openTab({ id: `strategy-document:${document.id}`, label: document.title, kind: 'strategy-document', section: 'Documents', strategyDocumentId: document.id })} onOpenAgent={askAgent} onOpenPlanning={() => navigate('Planning')} /> : activeTab.section === 'Planning' ? <Planning strategyOverride={planningStrategyOverride} onCreateStrategy={() => navigate('Strategy')} onAskAI={askAgent} /> : <AccountSettings user={user} migrationNotice={migrationNotice} onSaveName={saveProfileName} onLogout={onLogout} />}
+    {activeTab.kind === 'strategy-document' ? <StrategyDocuments documents={strategyDocuments} selectedDocumentId={activeTab.strategyDocumentId} onCreate={() => void createBlankDocument()} onOpen={(document) => openTab({ id: `strategy-document:${document.id}`, label: document.title, kind: 'strategy-document', section: 'Documents', strategyDocumentId: document.id })} onSave={saveStrategyDocument} onSaveDraft={saveDocumentDraft} onDiscardDraft={discardDocumentDraft} onRename={renameStrategyDocument} onDelete={deleteStrategyDocument} onDuplicate={duplicateStrategyDocument} onBack={() => navigate('Documents')} onOpenPlanning={openPlanningForStrategy} onAskAI={askAgent} /> : activeTab.section === 'Strategy' ? <Strategy onGenerateDocument={generateStrategyDocument} onAskAI={askAgent} /> : activeTab.section === 'Documents' ? <StrategyDocuments documents={strategyDocuments} onCreate={() => void createBlankDocument()} onOpen={(document) => openTab({ id: `strategy-document:${document.id}`, label: document.title, kind: 'strategy-document', section: 'Documents', strategyDocumentId: document.id })} onSave={saveStrategyDocument} onSaveDraft={saveDocumentDraft} onDiscardDraft={discardDocumentDraft} onRename={renameStrategyDocument} onDelete={deleteStrategyDocument} onDuplicate={duplicateStrategyDocument} onBack={() => navigate('Documents')} onOpenPlanning={openPlanningForStrategy} onAskAI={askAgent} /> : activeTab.section === 'Overview' ? <Dashboard documents={strategyDocuments} activity={activity} migrationNotice={migrationNotice} onOpenStrategy={() => navigate('Strategy')} onOpenDocuments={() => navigate('Documents')} onOpenDocument={(document) => openTab({ id: `strategy-document:${document.id}`, label: document.title, kind: 'strategy-document', section: 'Documents', strategyDocumentId: document.id })} onOpenAgent={askAgent} onOpenPlanning={() => navigate('Planning')} /> : activeTab.section === 'Planning' ? <Planning strategyOverride={planningStrategyOverride} onCreateStrategy={() => navigate('Strategy')} onAskAI={askAgent} /> : <AccountSettings user={user} migrationNotice={migrationNotice} onSaveName={saveProfileName} onLogout={onLogout} />}
   </AppLayout>
 }

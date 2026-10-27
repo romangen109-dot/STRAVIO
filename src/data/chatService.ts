@@ -21,6 +21,7 @@ export async function requestAgentResponse(context: AgentContext, prompt: string
       action: 'respond',
       strategyId: context.strategy.id,
       prompt,
+      responseLanguage: context.language,
       activeView: context.activeView,
       currentDocumentId: hasOpenedStrategyDocument ? context.currentDocument?.id : undefined,
       currentDocumentContent: hasOpenedStrategyDocument ? context.currentDocument?.content : undefined,

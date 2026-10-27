@@ -7,6 +7,7 @@ import { hasStrategyProgress } from '../strategy/useStrategy'
 import { AgentMessage as AgentMessageView } from '../ai/AgentMessage'
 import { ChatInput } from '../ai/ChatInput'
 import { useCurrentUser } from '../auth/UserContext'
+import { useI18n } from '../../i18n'
 
 type Props = {
   onClose: () => void
@@ -18,12 +19,12 @@ type Props = {
 
 const actionSteps = ['Reading saved strategy context', 'Checking Planning and documents', 'Preparing a contextual response']
 const agentActions = [
-  { id: 'analyze', label: 'Проанализировать стратегию', prompt: 'Analyze my strategy' },
-  { id: 'risks', label: 'Найти риски и противоречия', prompt: 'Find risks and contradictions' },
-  { id: 'tasks', label: 'Расставить приоритеты задач', prompt: 'What tasks should I do first?' },
-  { id: 'plans', label: 'Сравнить Plan A и Plan B', prompt: 'Review Plan A and Plan B' },
-  { id: 'step', label: 'Помочь с текущим шагом', prompt: 'Help me answer the current Strategy Algorithm step.' },
-  { id: 'goal', label: 'Уточнить Desired State', prompt: 'Help formulate my Desired State' },
+  { id: 'analyze', label: 'Analyze my strategy', prompt: 'Analyze my strategy' },
+  { id: 'risks', label: 'Find risks and contradictions', prompt: 'Find risks and contradictions' },
+  { id: 'tasks', label: 'Prioritize tasks', prompt: 'What tasks should I do first?' },
+  { id: 'plans', label: 'Compare Plan A and Plan B', prompt: 'Review Plan A and Plan B' },
+  { id: 'step', label: 'Help with the current step', prompt: 'Help me answer the current Strategy Algorithm step.' },
+  { id: 'goal', label: 'Clarify Desired State', prompt: 'Help formulate my Desired State' },
 ]
 
 function contextKey(context: AgentContext) {
@@ -43,6 +44,7 @@ function createMessage(userId: string, strategyId: string, role: AgentMessage['r
 }
 
 export function AIAgent({ onClose, getContext, initialPrompt, onPromptHandled, onApplyProposal }: Props) {
+  const { t } = useI18n()
   const user = useCurrentUser()
   const [chats, setChats] = useState<Record<string, AgentMessage[]>>({})
   const [historyLoading, setHistoryLoading] = useState(false)
@@ -174,28 +176,28 @@ export function AIAgent({ onClose, getContext, initialPrompt, onPromptHandled, o
   const phase = job?.status === 'thinking' ? 0 : job?.status === 'analyzing' ? 2 : 3
 
   return <aside className={`agent-panel ${isFullscreen ? 'is-fullscreen' : ''}`}>
-    <div className="agent-header"><div className="agent-title-mark"><Sparkles size={15} /></div><div className="agent-header-copy"><strong>AI Agent</strong><span className="beta-pill">BETA</span></div>
-      <button className="icon-button" onClick={clearConversation} aria-label="Clear current conversation" title="Clear current conversation" disabled={job !== null}><Trash2 size={14} /></button>
-      <button className="icon-button" onClick={() => setIsFullscreen((current) => !current)} aria-label={isFullscreen ? 'Exit fullscreen' : 'Open fullscreen'} title={isFullscreen ? 'Exit fullscreen' : 'Open fullscreen'}>{isFullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />}</button>
-      <button className="icon-button agent-menu-button" onClick={() => setMenuOpen(!menuOpen)} aria-label="Agent options"><MoreHorizontal size={16} /></button>
-      <button className="icon-button agent-close-button" onClick={onClose} aria-label="Hide AI Agent"><PanelRightClose size={16} /></button>
-      {menuOpen && <div className="agent-menu"><button onClick={clearConversation} disabled={job !== null}>Clear this strategy chat</button><button onClick={() => setMenuOpen(false)}>Context is loaded automatically</button></div>}
+    <div className="agent-header"><div className="agent-title-mark"><Sparkles size={15} /></div><div className="agent-header-copy"><strong>{t('AI Agent')}</strong><span className="beta-pill">{t('BETA')}</span></div>
+      <button className="icon-button" onClick={clearConversation} aria-label={t('Clear current conversation')} title={t('Clear current conversation')} disabled={job !== null}><Trash2 size={14} /></button>
+      <button className="icon-button" onClick={() => setIsFullscreen((current) => !current)} aria-label={t(isFullscreen ? 'Exit fullscreen' : 'Open fullscreen')} title={t(isFullscreen ? 'Exit fullscreen' : 'Open fullscreen')}>{isFullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />}</button>
+      <button className="icon-button agent-menu-button" onClick={() => setMenuOpen(!menuOpen)} aria-label={t('Agent options')}><MoreHorizontal size={16} /></button>
+      <button className="icon-button agent-close-button" onClick={onClose} aria-label={t('Hide AI Agent')}><PanelRightClose size={16} /></button>
+      {menuOpen && <div className="agent-menu"><button onClick={clearConversation} disabled={job !== null}>{t('Clear this strategy chat')}</button><button onClick={() => setMenuOpen(false)}>{t('Context is loaded automatically')}</button></div>}
     </div>
-    <div className="agent-context"><span className="context-signal" /><span>STRATEGY CONTEXT</span><span className="context-divider" /><FileText size={12} /><span>{contextLabel}</span><ChevronDown size={12} /></div>
+    <div className="agent-context"><span className="context-signal" /><span>{t('STRATEGY CONTEXT')}</span><span className="context-divider" /><FileText size={12} /><span>{contextLabel}</span><ChevronDown size={12} /></div>
     <div className="agent-scroll-area">
-      <div className="agent-intro"><div className="agent-orb"><Sparkles size={17} /></div><span className="eyebrow">STRAVIO INTELLIGENCE <i /> SERVER-SIDE</span><h2>Strategy-aware assistance.</h2><p>Контекст загружается сервером из вашей стратегии, документов и Planning. Предложения не применяются без подтверждения.</p><div className="agent-model-note"><Cpu size={12} /> SECURE SERVER AI PROVIDER</div></div>
-      {aiConnected === null && <div className="agent-connection-note"><span>i</span><div><strong>Secure server AI provider</strong><small>Доступность провайдера проверяется при первом запросе.</small></div></div>}
+      <div className="agent-intro"><div className="agent-orb"><Sparkles size={17} /></div><span className="eyebrow">{t('STRAVIO INTELLIGENCE')} <i /> {t('SERVER-SIDE')}</span><h2>{t('Strategy-aware assistance.')}</h2><p>{t('Контекст загружается сервером из вашей стратегии, документов и Planning. Предложения не применяются без подтверждения.')}</p><div className="agent-model-note"><Cpu size={12} /> {t('SECURE SERVER AI PROVIDER')}</div></div>
+      {aiConnected === null && <div className="agent-connection-note"><span>i</span><div><strong>{t('Secure server AI provider')}</strong><small>{t('Доступность провайдера проверяется при первом запросе.')}</small></div></div>}
 
-      <div className="agent-actions-block"><div className="agent-section-label"><span>STRATEGY ACTIONS</span><span>06</span></div><div className="agent-action-list">{agentActions.map((action, index) => <button className="agent-action" key={action.id} onClick={() => sendPrompt(action.prompt)} disabled={historyLoading || job?.status === 'thinking' || job?.status === 'analyzing'}><span className="agent-action-number">0{index + 1}</span><span>{action.label}</span><ArrowRight size={13} /></button>)}</div></div>
+      <div className="agent-actions-block"><div className="agent-section-label"><span>{t('STRATEGY ACTIONS')}</span><span>06</span></div><div className="agent-action-list">{agentActions.map((action, index) => <button className="agent-action" key={action.id} onClick={() => sendPrompt(action.prompt)} disabled={historyLoading || job?.status === 'thinking' || job?.status === 'analyzing'}><span className="agent-action-number">0{index + 1}</span><span>{t(action.label)}</span><ArrowRight size={13} /></button>)}</div></div>
 
-      {job && <div className="agent-job-card"><div className="job-card-heading"><span className={`job-state-icon ${job.status}`}><Sparkles size={13} /></span><div><strong>{job.status === 'thinking' ? 'Thinking' : 'Analyzing'}</strong><small>{job.title}</small></div><span className={`job-status-text ${job.status}`}>{job.status.toUpperCase()}</span></div><div className="agent-progress-list">{actionSteps.map((step, index) => <div className={`agent-progress-step ${index < phase ? 'is-done' : index === phase ? 'is-current' : ''}`} key={step}><span>{index < phase ? <Check size={10} /> : index === phase ? <span className="progress-pulse" /> : null}</span>{step}</div>)}</div></div>}
+      {job && <div className="agent-job-card"><div className="job-card-heading"><span className={`job-state-icon ${job.status}`}><Sparkles size={13} /></span><div><strong>{t(job.status === 'thinking' ? 'Thinking' : 'Analyzing')}</strong><small>{t(job.title)}</small></div><span className={`job-status-text ${job.status}`}>{t(job.status.toUpperCase())}</span></div><div className="agent-progress-list">{actionSteps.map((step, index) => <div className={`agent-progress-step ${index < phase ? 'is-done' : index === phase ? 'is-current' : ''}`} key={step}><span>{index < phase ? <Check size={10} /> : index === phase ? <span className="progress-pulse" /> : null}</span>{t(step)}</div>)}</div></div>}
 
-      {historyLoading && <div className="agent-typing">Loading saved conversation…</div>}
-      {messages.map((message) => <div className={`chat-message ${message.role}`} key={message.id}><span className="chat-message-avatar">{message.role === 'user' ? 'YOU' : <Sparkles size={12} />}</span><div className="chat-message-body"><small>{message.role === 'user' ? 'YOU' : 'STRAVIO AGENT · SERVER'}</small>{message.role === 'user' ? <p>{message.content}</p> : <AgentMessageView content={message.content} proposal={message.proposal} onApplyProposal={(proposal) => applyProposal(message, proposal)} onSetProposalStatus={(status) => setProposalStatus(message, status)} />}</div></div>)}
-      {providerError && <div className="agent-inline-error">{providerError}</div>}
-      {job?.status === 'thinking' && <div className="agent-typing"><span /><span /><span /> Reading saved project context</div>}
+      {historyLoading && <div className="agent-typing">{t('Loading saved conversation…')}</div>}
+      {messages.map((message) => <div className={`chat-message ${message.role}`} key={message.id}><span className="chat-message-avatar">{message.role === 'user' ? t('YOU') : <Sparkles size={12} />}</span><div className="chat-message-body"><small>{message.role === 'user' ? t('YOU') : t('STRAVIO AGENT · SERVER')}</small>{message.role === 'user' ? <p>{message.content}</p> : <AgentMessageView content={message.content} proposal={message.proposal} onApplyProposal={(proposal) => applyProposal(message, proposal)} onSetProposalStatus={(status) => setProposalStatus(message, status)} />}</div></div>)}
+      {providerError && <div className="agent-inline-error">{t(providerError)}</div>}
+      {job?.status === 'thinking' && <div className="agent-typing"><span /><span /><span /> {t('Reading saved project context')}</div>}
       <div ref={conversationEnd} />
     </div>
-    <div className="agent-composer"><div className="composer-context"><span><span className="context-signal" /> {context.activeView} · strategy, tasks and documents</span><button className="icon-button" title="Context refreshes before each request"><ChevronDown size={13} /></button></div><ChatInput disabled={historyLoading || job?.status === 'thinking' || job?.status === 'analyzing'} onSend={sendPrompt} /><div className="composer-footer"><span><Command size={10} /> Enter to send</span><span>Changes require confirmation</span></div></div>
+    <div className="agent-composer"><div className="composer-context"><span><span className="context-signal" /> {t(context.activeView)} · {t('strategy, tasks and documents')}</span><button className="icon-button" title={t('Context refreshes before each request')}><ChevronDown size={13} /></button></div><ChatInput disabled={historyLoading || job?.status === 'thinking' || job?.status === 'analyzing'} onSend={sendPrompt} /><div className="composer-footer"><span><Command size={10} /> {t('Enter to send')}</span><span>{t('Changes require confirmation')}</span></div></div>
   </aside>
 }

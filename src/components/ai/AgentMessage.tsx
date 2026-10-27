@@ -2,6 +2,7 @@
 import { useRef, useState, type ReactNode } from 'react'
 import { Check, ChevronDown, Circle, Plus } from 'lucide-react'
 import type { AgentProposal, AgentProposalStatus } from '../../types'
+import { useI18n } from '../../i18n'
 
 type Props = {
   content: string
@@ -11,6 +12,7 @@ type Props = {
 }
 
 export function AgentMessage({ content, proposal, onApplyProposal, onSetProposalStatus }: Props) {
+  const { t } = useI18n()
   const [proposalError, setProposalError] = useState('')
   const [busy, setBusy] = useState(false)
   const applyingProposalIds = useRef(new Set<string>())
@@ -44,10 +46,10 @@ export function AgentMessage({ content, proposal, onApplyProposal, onSetProposal
   return <div className="agent-response-content">
     <MarkdownContent content={content} />
     {proposal && <section className={`agent-proposal-card ${proposal.status}`}>
-      <div className="agent-proposal-heading"><span><Circle size={7} fill="currentColor" /></span><strong>{proposal.kind === 'create-tasks' ? 'Proposed Planning tasks' : 'Proposed strategy change'}</strong><small>{proposal.status === 'pending' ? 'AWAITING CONFIRMATION' : proposal.status === 'applied' ? 'APPLIED' : 'CANCELLED'}</small></div>
-      {proposal.kind === 'create-tasks' ? <div className="agent-proposal-items">{proposal.tasks.map((task, index) => <div key={`${task.title}-${index}`}><span>{String(index + 1).padStart(2, '0')}</span><div><strong>{task.title}</strong>{task.description && <small>{task.description}</small>}</div></div>)}</div> : <div className="agent-proposal-change"><div><small>CURRENT DESIRED STATE</small><p>{proposal.previousValue || 'Not provided'}</p></div><ChevronDown size={14} /><div><small>PROPOSED DESIRED STATE</small><p>{proposal.proposedValue}</p></div></div>}
-      {proposal.status === 'pending' ? <div className="agent-proposal-actions"><button className="outline-button" onClick={() => void cancel()} disabled={busy}>Cancel</button><button className="outline-button algorithm-primary" onClick={() => void apply()} disabled={busy}>{proposal.kind === 'create-tasks' ? <><Plus size={12} /> {busy ? 'Creating…' : 'Create Tasks'}</> : <><Check size={12} /> {busy ? 'Applying…' : 'Apply Change'}</>}</button></div> : <div className="agent-proposal-result"><Check size={12} /> {proposal.status === 'applied' ? 'Confirmed and saved' : 'No changes made'}</div>}
-      {proposalError && <p className="agent-proposal-error">{proposalError}</p>}
+      <div className="agent-proposal-heading"><span><Circle size={7} fill="currentColor" /></span><strong>{t(proposal.kind === 'create-tasks' ? 'Proposed Planning tasks' : 'Proposed strategy change')}</strong><small>{t(proposal.status === 'pending' ? 'AWAITING CONFIRMATION' : proposal.status === 'applied' ? 'APPLIED' : 'CANCELLED')}</small></div>
+      {proposal.kind === 'create-tasks' ? <div className="agent-proposal-items">{proposal.tasks.map((task, index) => <div key={`${task.title}-${index}`}><span>{String(index + 1).padStart(2, '0')}</span><div><strong>{task.title}</strong>{task.description && <small>{task.description}</small>}</div></div>)}</div> : <div className="agent-proposal-change"><div><small>{t('CURRENT DESIRED STATE')}</small><p>{proposal.previousValue || t('Not provided')}</p></div><ChevronDown size={14} /><div><small>{t('PROPOSED DESIRED STATE')}</small><p>{proposal.proposedValue}</p></div></div>}
+      {proposal.status === 'pending' ? <div className="agent-proposal-actions"><button className="outline-button" onClick={() => void cancel()} disabled={busy}>{t('Cancel')}</button><button className="outline-button algorithm-primary" onClick={() => void apply()} disabled={busy}>{proposal.kind === 'create-tasks' ? <><Plus size={12} /> {t(busy ? 'Creating…' : 'Create Tasks')}</> : <><Check size={12} /> {t(busy ? 'Applying…' : 'Apply Change')}</>}</button></div> : <div className="agent-proposal-result"><Check size={12} /> {t(proposal.status === 'applied' ? 'Confirmed and saved' : 'No changes made')}</div>}
+      {proposalError && <p className="agent-proposal-error">{t(proposalError)}</p>}
     </section>}
   </div>
 }

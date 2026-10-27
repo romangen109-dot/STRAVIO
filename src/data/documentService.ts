@@ -23,9 +23,28 @@ export async function updateStrategyDocumentRecord(userId: string, id: string, c
     const document = workspace.documents.find((entry) => entry.id === id)
     if (!document) throw new Error('The document no longer exists in this local profile.')
     document.content = content
+    delete document.draftContent
     document.status = 'edited'
     document.updatedAt = new Date().toISOString()
     addLocalActivity(workspace, userId, 'document-edited', document.title, document.strategy.id, id)
+    return document
+  })
+}
+
+export async function saveStrategyDocumentDraft(userId: string, id: string, content: string) {
+  return updateLocalWorkspace(userId, (workspace) => {
+    const document = workspace.documents.find((entry) => entry.id === id)
+    if (!document) throw new Error('The document no longer exists in this local profile.')
+    document.draftContent = content
+    return document
+  })
+}
+
+export async function discardStrategyDocumentDraft(userId: string, id: string) {
+  return updateLocalWorkspace(userId, (workspace) => {
+    const document = workspace.documents.find((entry) => entry.id === id)
+    if (!document) throw new Error('The document no longer exists in this local profile.')
+    delete document.draftContent
     return document
   })
 }

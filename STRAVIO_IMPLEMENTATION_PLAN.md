@@ -54,3 +54,15 @@
 - No database schema changes were needed; the existing RLS schema, owner-scoped relations and storage/migration data were preserved.
 - TypeScript checks and Vite production build pass. There are no configured automated test or lint scripts.
 - Live Auth, cross-user RLS, database persistence, Google OAuth and AI-provider scenarios still require project credentials and Supabase Dashboard/function configuration. Vercel project environment variables must also be entered by the owner.
+
+## Local workspace functional audit — 2026-10-27
+
+- [x] Persist strategy edits immediately and keep the selected strategy stable when another strategy is read or updated.
+- [x] Keep generated strategy-document content in sync with strategy changes without overwriting manually edited content.
+- [x] Persist document editor drafts locally so they survive navigation/reload; clear drafts only after a successful save or explicit cancellation.
+- [x] Keep Planning task caches and Dashboard/task consumers up to date after strategy/task changes.
+- [x] Validate Today, Tomorrow, Week and Month date boundaries, including year rollover and invalid calendar dates.
+- [x] Validate local workflow data for two independent strategies, algorithm fields, linked documents/tasks, activity, profile persistence and AI-context filtering.
+- [x] Run `npm test`, `npm run build`, `git diff --check` and workspace diagnostics.
+- [ ] Browser-level end-to-end testing was not available in this environment.
+- [ ] Real AI responses still require the authenticated external Edge Function; no response is simulated in local Demo Mode.

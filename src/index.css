@@ -1143,6 +1143,7 @@ button:disabled { cursor: not-allowed; opacity: .52; }
 .auth-field > div { display: flex; align-items: center; gap: 8px; min-height: 35px; padding: 0 9px; border: 1px solid #303b49; border-radius: 4px; color: #718196; background: #0d141c; }
 .auth-field > div:focus-within { border-color: #506d93; }
 .auth-field input { width: 100%; min-width: 0; height: 33px; padding: 0; border: 0; outline: 0; color: #dce4ef; background: transparent; font-size: 10px; }
+.auth-field select, .account-field select { width: 100%; min-width: 0; height: 32px; padding: 0 8px; border: 1px solid #303b49; border-radius: 4px; color: #d4deea; background: #0e151d; font-size: 10px; }
 .auth-field input::placeholder { color: #667588; }
 .auth-error { padding: 8px; border: 1px solid #59403e; border-radius: 4px; color: #d5a49b; background: #251b1d; font-size: 9px; line-height: 1.45; }
 .auth-submit { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 36px; margin-top: 3px; border: 1px solid #47668d; border-radius: 4px; color: #dce9fa; background: #20334a; font-size: 10px; cursor: pointer; }

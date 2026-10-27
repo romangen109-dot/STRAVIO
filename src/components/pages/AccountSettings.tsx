@@ -3,6 +3,7 @@ import { HardDrive, LogOut, Save, ShieldCheck, UserRound } from 'lucide-react'
 import type { User } from '../../types'
 import { getLocalImportPreview, importLocalWorkspace } from '../../data/migrationService'
 import { logClientError, userFacingError } from '../../data/errorHandling'
+import { LanguagePicker, useI18n } from '../../i18n'
 
 type Props = {
   user: User
@@ -12,6 +13,7 @@ type Props = {
 }
 
 export function AccountSettings({ user, migrationNotice, onSaveName, onLogout }: Props) {
+  const { t } = useI18n()
   const [name, setName] = useState(user.name)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState('')
@@ -29,10 +31,10 @@ export function AccountSettings({ user, migrationNotice, onSaveName, onLogout }:
     try {
       const success = await onSaveName(name)
       setSaved(success)
-      setError(success ? '' : 'Could not save the profile name.')
+      setError(success ? '' : t('Could not save the profile name.'))
     } catch (saveError) {
       setSaved(false)
-      setError(userFacingError(saveError, 'Could not save the profile name.'))
+      setError(t(userFacingError(saveError, 'Could not save the profile name.')))
     } finally {
       setSaving(false)
     }
@@ -43,10 +45,10 @@ export function AccountSettings({ user, migrationNotice, onSaveName, onLogout }:
     setImportNotice('')
     try {
       const counts = await importLocalWorkspace(user.email, user.id)
-      setImportNotice(`Imported ${counts.strategies} strategies, ${counts.documents} documents, ${counts.tasks} tasks, ${counts.messages} AI messages and ${counts.activity} activity entries. Original browser data was kept.`)
+      setImportNotice(t('Imported {strategies} strategies, {documents} documents, {tasks} tasks, {messages} AI messages and {activity} activity entries. Original browser data was kept.', counts))
       setImportState('complete')
     } catch (importError) {
-      setImportNotice(importError instanceof Error ? importError.message : 'Local data import failed. Original browser data was kept.')
+      setImportNotice(t(importError instanceof Error ? importError.message : 'Local data import failed. Original browser data was kept.'))
       setImportState('idle')
     }
   }
@@ -58,38 +60,39 @@ export function AccountSettings({ user, migrationNotice, onSaveName, onLogout }:
       await onLogout()
     } catch (logoutError) {
       logClientError('end local profile session', logoutError)
-      setError(logoutError instanceof Error ? logoutError.message : 'Could not end the local profile session. Please try again.')
+      setError(t(logoutError instanceof Error ? logoutError.message : 'Could not end the local profile session. Please try again.'))
       setLoggingOut(false)
     }
   }
 
   return <div className="secondary-page account-settings-page">
-    <div className="page-crumb"><span>ACCOUNT</span><span>›</span><span>SETTINGS</span></div>
-    <div className="secondary-heading"><div><span className="eyebrow">LOCAL PROFILE <i /> BROWSER-STORED DATA</span><h1>Settings</h1><p>Manage your Stravio profile and local workspace data.</p></div></div>
+    <div className="page-crumb"><span>{t('ACCOUNT')}</span><span>›</span><span>{t('SETTINGS').toUpperCase()}</span></div>
+    <div className="secondary-heading"><div><span className="eyebrow">{t('LOCAL PROFILE')} <i /> {t('BROWSER-STORED DATA')}</span><h1>{t('Settings')}</h1><p>{t('Manage your Stravio profile and local workspace data.')}</p></div></div>
     <div className="account-settings-grid">
       <section className="workspace-panel account-settings-panel">
-        <div className="account-section-heading"><span className="account-section-icon"><UserRound size={15} /></span><div><span className="eyebrow">PROFILE</span><h2>Your profile</h2></div></div>
+        <div className="account-section-heading"><span className="account-section-icon"><UserRound size={15} /></span><div><span className="eyebrow">{t('PROFILE')}</span><h2>{t('Your profile')}</h2></div></div>
+        <LanguagePicker className="account-field language-picker" />
         <form className="account-profile-form" onSubmit={save}>
-          <label className="account-field">Name<input required value={name} onChange={(event) => { setName(event.target.value); setSaved(false) }} /></label>
-          <label className="account-field">Email<input value={user.email} readOnly aria-readonly="true" /></label>
-          <div className="account-form-footer">{error && <span className="account-error">{error}</span>}{saved && <span className="account-success">Profile saved</span>}<button className="outline-button algorithm-primary" disabled={saving || !name.trim() || name.trim() === user.name}><Save size={13} /> {saving ? 'Saving…' : 'Save profile'}</button></div>
+          <label className="account-field">{t('Name')}<input required value={name} onChange={(event) => { setName(event.target.value); setSaved(false) }} /></label>
+          <label className="account-field">{t('Email')}<input value={user.email} readOnly aria-readonly="true" /></label>
+          <div className="account-form-footer">{error && <span className="account-error">{error}</span>}{saved && <span className="account-success">{t('Profile saved')}</span>}<button className="outline-button algorithm-primary" disabled={saving || !name.trim() || name.trim() === user.name}><Save size={13} /> {saving ? t('Saving…') : t('Save profile')}</button></div>
         </form>
       </section>
 
       <section className="workspace-panel account-settings-panel">
-        <div className="account-section-heading"><span className="account-section-icon account-storage-icon"><HardDrive size={15} /></span><div><span className="eyebrow">BROWSER STORAGE</span><h2>Local workspace</h2></div></div>
-        <div className="account-storage-status"><span className="account-storage-dot" /><div><strong>Local profile session</strong><small>Strategies, documents, Planning, AI history and activity are stored in this browser.</small></div><span className="account-local-badge">LOCAL</span></div>
-        <p className="account-storage-description">Import existing browser records into this local profile. The import is profile-scoped, repeatable and never removes its local source.</p>
-        {importPreview.localAccountFound ? <div className="account-migration-notice"><ShieldCheck size={14} /><span>Found {importPreview.counts.strategies} strategies, {importPreview.counts.documents} documents, {importPreview.counts.tasks} tasks, {importPreview.counts.messages} AI messages and {importPreview.counts.activity} activity entries.</span></div> : <p className="account-storage-description">No local account with this email was found in this browser.</p>}
+        <div className="account-section-heading"><span className="account-section-icon account-storage-icon"><HardDrive size={15} /></span><div><span className="eyebrow">{t('BROWSER STORAGE')}</span><h2>{t('Local workspace')}</h2></div></div>
+        <div className="account-storage-status"><span className="account-storage-dot" /><div><strong>{t('Local profile session')}</strong><small>{t('Strategies, documents, Planning, AI history and activity are stored in this browser.')}</small></div><span className="account-local-badge">{t('LOCAL')}</span></div>
+        <p className="account-storage-description">{t('Import existing browser records into this local profile. The import is profile-scoped, repeatable and never removes its local source.')}</p>
+        {importPreview.localAccountFound ? <div className="account-migration-notice"><ShieldCheck size={14} /><span>{t('Found {strategies} strategies, {documents} documents, {tasks} tasks, {messages} AI messages and {activity} activity entries.', importPreview.counts)}</span></div> : <p className="account-storage-description">{t('No local account with this email was found in this browser.')}</p>}
         {importNotice && <div className="account-migration-notice" role="status">{importNotice}</div>}
-        {importPreview.localAccountFound && <button className="outline-button algorithm-primary" onClick={() => void importLocalData()} disabled={importState === 'importing' || importState === 'complete'}><ShieldCheck size={13} /> {importState === 'importing' ? 'Importing…' : importState === 'complete' ? 'Import complete' : 'Import local data'}</button>}
-        {migrationNotice && <div className="account-migration-notice"><ShieldCheck size={14} />{migrationNotice}</div>}
+        {importPreview.localAccountFound && <button className="outline-button algorithm-primary" onClick={() => void importLocalData()} disabled={importState === 'importing' || importState === 'complete'}><ShieldCheck size={13} /> {t(importState === 'importing' ? 'Importing…' : importState === 'complete' ? 'Import complete' : 'Import local data')}</button>}
+        {migrationNotice && <div className="account-migration-notice"><ShieldCheck size={14} />{t(migrationNotice)}</div>}
       </section>
 
       <section className="workspace-panel account-settings-panel account-security-panel">
-        <div className="account-section-heading"><span className="account-section-icon"><ShieldCheck size={15} /></span><div><span className="eyebrow">ACCOUNT</span><h2>Session</h2></div></div>
-        <p className="account-storage-description">You are using the local profile <strong>{user.name}</strong>. Signing out ends this browser session; saved workspace data remains in this browser.</p>
-        <button className="outline-button account-logout-button" onClick={() => void logout()} disabled={loggingOut}><LogOut size={14} /> {loggingOut ? 'Signing out…' : 'Log out'}</button>
+        <div className="account-section-heading"><span className="account-section-icon"><ShieldCheck size={15} /></span><div><span className="eyebrow">{t('ACCOUNT')}</span><h2>{t('Session')}</h2></div></div>
+        <p className="account-storage-description">{t('You are using the local profile {name}. Signing out ends this browser session; saved workspace data remains in this browser.', { name: user.name })}</p>
+        <button className="outline-button account-logout-button" onClick={() => void logout()} disabled={loggingOut}><LogOut size={14} /> {loggingOut ? t('Signing out…') : t('Log out')}</button>
       </section>
 
     </div>

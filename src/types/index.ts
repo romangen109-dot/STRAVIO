@@ -113,6 +113,7 @@ export type StrategyDocument = {
   updatedAt: string
   status: 'ready' | 'edited'
   strategy: StrategyData
+  draftContent?: string
 }
 
 export type StrategyActivityType = 'strategy-created' | 'strategy-updated' | 'strategy-completed' | 'document-generated' | 'document-edited' | 'document-deleted' | 'task-created' | 'task-completed' | 'ai-action-applied'
@@ -163,6 +164,7 @@ export type AgentMessage = {
 
 export type AgentContext = {
   userId: string
+  language: 'ru' | 'en' | 'kk'
   strategy: StrategyData
   hasActiveStrategy: boolean
   tasks: PlanningTask[]

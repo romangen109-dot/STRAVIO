@@ -9,10 +9,12 @@ import { StagePlansStep } from './StagePlansStep'
 import { StrategyCompleted } from './StrategyCompleted'
 import { StrategicOptionsStep } from './StrategicOptionsStep'
 import { useStrategy } from './useStrategy'
+import { useI18n } from '../../i18n'
 
 type Props = { onGenerateDocument: (strategy: StrategyData) => Promise<boolean>; onAskAI: (prompt: string) => void }
 
 export function Strategy({ onGenerateDocument, onAskAI }: Props) {
+  const { t } = useI18n()
   const { strategy, strategies, updateStrategy, chooseStrategy, createNewStrategy, deleteCurrentStrategy, loading, loadError, saveState, error } = useStrategy()
   const setStep = (workflowStep: number) => updateStrategy((current) => ({ ...current, workflowStep }))
 
@@ -27,29 +29,29 @@ export function Strategy({ onGenerateDocument, onAskAI }: Props) {
   const deleteStage = (id: string) => updateStrategy((current) => ({ ...current, stages: current.stages.filter((stage) => stage.id !== id) }))
   const finishControl = () => updateStrategy((current) => ({ ...current, completed: true, workflowStep: 5 }))
 
-  if (loading) return <div className="strategy-page"><section className="workspace-panel algorithm-completed" aria-live="polite">Loading strategy…</section></div>
-  if (loadError) return <div className="strategy-page"><section className="workspace-panel algorithm-completed" role="alert"><h2>Strategy could not be loaded.</h2><p>{loadError}</p><button className="outline-button" onClick={() => window.location.reload()}>Reload workspace</button></section></div>
+  if (loading) return <div className="strategy-page"><section className="workspace-panel algorithm-completed" aria-live="polite">{t('Loading strategy…')}</section></div>
+  if (loadError) return <div className="strategy-page"><section className="workspace-panel algorithm-completed" role="alert"><h2>{t('Strategy could not be loaded.')}</h2><p>{t(loadError)}</p><button className="outline-button" onClick={() => window.location.reload()}>{t('Reload workspace')}</button></section></div>
 
   return <div className="strategy-page">
     <header className="project-page-header">
-      <div className="page-crumb"><span>PROJECT</span><ChevronRight size={12} /><span>STRATEGY</span></div>
+      <div className="page-crumb"><span>{t('PROJECT')}</span><ChevronRight size={12} /><span>{t('STRATEGY')}</span></div>
       <div className="project-title-row">
         <div className="strategy-project-icon"><Layers3 size={19} /></div>
-        <div className="project-title-copy"><label className="eyebrow" htmlFor="strategy-name">STRATEGY NAME</label><input id="strategy-name" className="strategy-name-input" required maxLength={120} value={strategy.name} onChange={(event) => updateStrategy((current) => ({ ...current, name: event.target.value || 'Untitled Strategy' }))} /><p>{strategy.description || 'Build a strategy from your current state, goals and available options.'}</p></div>
-        <div className="project-header-meta"><button className="outline-button" onClick={() => onAskAI('Help me answer the current Strategy Algorithm step.')}>Ask AI</button><span className="status-pill"><i /> {strategy.completed ? 'Strategy completed' : 'In progress'}</span><span className="updated-label"><Clock3 size={12} /> {saveState === 'saving' ? 'Saving in browser…' : saveState === 'saved' ? 'Saved in browser' : saveState === 'error' ? 'Not saved' : 'Browser save pending'}</span></div>
+        <div className="project-title-copy"><label className="eyebrow" htmlFor="strategy-name">{t('STRATEGY NAME')}</label><input id="strategy-name" className="strategy-name-input" required maxLength={120} value={strategy.name} onChange={(event) => updateStrategy((current) => ({ ...current, name: event.target.value || 'Untitled Strategy' }))} /><p>{strategy.description || t('Build a strategy from your current state, goals and available options.')}</p></div>
+        <div className="project-header-meta"><button className="outline-button" onClick={() => onAskAI('Help me answer the current Strategy Algorithm step.')}>{t('Ask AI')}</button><span className="status-pill"><i /> {t(strategy.completed ? 'Strategy completed' : 'In progress')}</span><span className="updated-label"><Clock3 size={12} /> {t(saveState === 'saving' ? 'Saving in browser…' : saveState === 'saved' ? 'Saved in browser' : saveState === 'error' ? 'Not saved' : 'Browser save pending')}</span></div>
       </div>
       <div className="strategy-library-actions">
-        <label className="strategy-selector-label" htmlFor="strategy-selector">STRATEGY LIBRARY</label>
-        <select id="strategy-selector" value={strategies.some((entry) => entry.id === strategy.id) ? strategy.id : ''} onChange={(event) => chooseStrategy(event.target.value)} disabled={!strategies.length} aria-label="Select active strategy">
-          {strategies.length ? strategies.map((entry) => <option value={entry.id} key={entry.id}>{entry.name || 'Untitled Strategy'}</option>) : <option value="">No saved strategies</option>}
+        <label className="strategy-selector-label" htmlFor="strategy-selector">{t('STRATEGY LIBRARY')}</label>
+        <select id="strategy-selector" value={strategies.some((entry) => entry.id === strategy.id) ? strategy.id : ''} onChange={(event) => chooseStrategy(event.target.value)} disabled={!strategies.length} aria-label={t('Select active strategy')}>
+          {strategies.length ? strategies.map((entry) => <option value={entry.id} key={entry.id}>{entry.name || t('Untitled Strategy')}</option>) : <option value="">{t('No saved strategies')}</option>}
         </select>
-        <button className="outline-button" onClick={() => void createNewStrategy()} disabled={saveState === 'saving'}>New Strategy</button>
+        <button className="outline-button" onClick={() => void createNewStrategy()} disabled={saveState === 'saving'}>{t('New Strategy')}</button>
         <button className="outline-button planning-delete" onClick={() => {
-          if (window.confirm(`Delete “${strategy.name || 'Untitled Strategy'}”? Its linked documents, tasks and AI history will also be permanently deleted.`)) void deleteCurrentStrategy()
-        }} disabled={!strategies.some((entry) => entry.id === strategy.id) || saveState === 'saving'}>Delete</button>
+          if (window.confirm(t('Delete “{name}”? Its linked documents, tasks and AI history will also be permanently deleted.', { name: strategy.name || t('Untitled Strategy') }))) void deleteCurrentStrategy()
+        }} disabled={!strategies.some((entry) => entry.id === strategy.id) || saveState === 'saving'}>{t('Delete')}</button>
       </div>
     </header>
-    {error && <div className="auth-error" role="alert">Could not save strategy: {error}</div>}
+    {error && <div className="auth-error" role="alert">{t('Could not save strategy: {error}', { error })}</div>}
     <AlgorithmProgress activeStep={strategy.workflowStep} completed={strategy.completed} onSelectStep={setStep} />
     <div className="strategy-content algorithm-content">
       {strategy.completed ? <StrategyCompleted strategy={strategy} onGenerateDocument={() => onGenerateDocument(strategy)} /> : strategy.workflowStep === 0 ? <InterviewStep
